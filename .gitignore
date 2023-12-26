@@ -30,3 +30,4 @@ go.work
 
 credentials.json
 .env
+/tmp
