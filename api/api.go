@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	googleSS "github.com/carlosdimatteo/fintrack-backend-go/adapters"
 	"github.com/gorilla/mux"
@@ -23,22 +24,14 @@ func greet(w http.ResponseWriter, r *http.Request) {
 }
 
 func submitRow(w http.ResponseWriter, r *http.Request) {
-	// if r.Method != "POST" {
-	// 	NotFoundResponse(w, r)
-	// 	return
-	// }
+
 	/** TODO:
 	implement google spreadsheet adapter
 	*/
 	fmt.Println("submitting row")
-	rowtoSubmit := googleSS.FintrackRow{
-		Date:           "2021-09-01",
-		Category:       "Food",
-		Expense:        "Groceries",
-		Description:    "Walmart",
-		Method:         "Credit Card",
-		OriginalAmount: "100.00",
-	}
+	var rowtoSubmit googleSS.FintrackRow
+	json.NewDecoder(r.Body).Decode(&rowtoSubmit)
+	rowtoSubmit.Date = time.Now().Format("2006-01-02")
 	_, err := googleSS.SubmitRow(rowtoSubmit)
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -55,7 +48,7 @@ func submitRow(w http.ResponseWriter, r *http.Request) {
 func LoadRoutes(muxRouter *mux.Router) {
 	api := muxRouter.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/", greet).Methods("GET")
-	api.HandleFunc("/submit", submitRow)
+	api.HandleFunc("/submit", submitRow).Methods("POST")
 }
 
 func NotFoundResponse(w http.ResponseWriter, r *http.Request) {
