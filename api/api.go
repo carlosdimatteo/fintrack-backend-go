@@ -24,7 +24,10 @@ func greet(w http.ResponseWriter, r *http.Request) {
 }
 
 func submitRow(w http.ResponseWriter, r *http.Request) {
+	//Allow CORS here By * or specific origin
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	/** TODO:
 	implement google spreadsheet adapter
 	*/
@@ -48,7 +51,7 @@ func submitRow(w http.ResponseWriter, r *http.Request) {
 func LoadRoutes(muxRouter *mux.Router) {
 	api := muxRouter.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/", greet).Methods("GET")
-	api.HandleFunc("/submit", submitRow).Methods("POST")
+	api.HandleFunc("/submit", submitRow).Methods("POST", "OPTIONS")
 }
 
 func NotFoundResponse(w http.ResponseWriter, r *http.Request) {
