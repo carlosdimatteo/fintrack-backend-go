@@ -2,7 +2,6 @@ package googleSS
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 
@@ -13,7 +12,6 @@ import (
 const (
 	credentialsFile = "credentials.json"
 	scopes          = "https://www.googleapis.com/auth/spreadsheets"
-	spreadsheetID   = "1tufwF9c3WwhrZF7o79zL-lBZKs8ccrZ17lXR0cVWIio"
 	sheetName       = "Fintrack"
 )
 
@@ -28,6 +26,7 @@ type FintrackRow struct {
 
 func SubmitRow(expensedata FintrackRow) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	ctx := context.Background()
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
 		log.Fatal(err)
@@ -42,13 +41,13 @@ func SubmitRow(expensedata FintrackRow) (*sheets.SpreadsheetsValuesAppendCall, e
 
 	/** get metadata as a way to test if adapter works, erase later */
 	// Get metadata about the spreadsheet
-	spreadsheetService := sheets.NewSpreadsheetsService(sheetService)
-	metaData, err := spreadsheetService.Get(spreadsheetID).Do()
-	if err != nil {
-		log.Fatalf("Unable to retrieve spreadsheet metadata: %v", err)
-		return nil, err
-	}
-	fmt.Printf("Spreadsheet title: %s\n", metaData.Properties.Title)
+	// spreadsheetService := sheets.NewSpreadsheetsService(sheetService)
+	// metaData, err := spreadsheetService.Get(spreadsheetID).Do()
+	// if err != nil {
+	// 	log.Fatalf("Unable to retrieve spreadsheet metadata: %v", err)
+	// 	return nil, err
+	// }
+	// fmt.Printf("Spreadsheet title: %s\n", metaData.Properties.Title)
 
 	sheetValueService := sheets.NewSpreadsheetsValuesService(sheetService)
 	/**
