@@ -31,6 +31,9 @@ func submitRow(w http.ResponseWriter, r *http.Request) {
 	/** TODO:
 	implement google spreadsheet adapter
 	*/
+	if r.Method == "OPTIONS" {
+		return
+	}
 	fmt.Println("submitting row")
 	var rowtoSubmit googleSS.FintrackRow
 	json.NewDecoder(r.Body).Decode(&rowtoSubmit)
