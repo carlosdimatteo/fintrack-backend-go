@@ -12,7 +12,7 @@ import (
 const (
 	credentialsFile = "credentials.json"
 	scopes          = "https://www.googleapis.com/auth/spreadsheets"
-	sheetName       = "Fintrack"
+	sheetName       = "2024 Fintrack"
 )
 
 type FintrackRow struct {
@@ -73,7 +73,7 @@ func SubmitRow(expensedata FintrackRow) (*sheets.SpreadsheetsValuesAppendCall, e
 	}
 	_, err = sheetValueService.Append(
 		spreadsheetID,
-		"Fintrack!A:F",
+		"2024 Fintrack!A:F",
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		log.Fatalf("Unable to write data to sheet: %v", err)
