@@ -34,9 +34,9 @@ func submitRow(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	fmt.Println("submitting row")
 	var rowtoSubmit googleSS.FintrackRow
 	json.NewDecoder(r.Body).Decode(&rowtoSubmit)
+	fmt.Println("submitting row : \n description:", rowtoSubmit.Description, "\n amount:  ", rowtoSubmit.OriginalAmount)
 	rowtoSubmit.Date = time.Now().Format("2006-01-02")
 	_, err := googleSS.SubmitRow(rowtoSubmit)
 	if err != nil {
