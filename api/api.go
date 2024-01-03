@@ -3,10 +3,12 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
-	googleSS "github.com/carlosdimatteo/fintrack-backend-go/adapters"
+	googleSS "github.com/carlosdimatteo/fintrack-backend-go/adapters/google"
+	"github.com/carlosdimatteo/fintrack-backend-go/adapters/supabase"
 	"github.com/gorilla/mux"
 )
 
@@ -16,6 +18,7 @@ type Response struct {
 }
 
 func greet(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	res := Response{
 		Success: true,
 		Message: "Fintrack Server up",
@@ -43,12 +46,21 @@ func submitRow(w http.ResponseWriter, r *http.Request) {
 		ServerErrorResponse(w, r)
 		return
 	}
+
 	res := Response{
 		Success: true,
 		Message: "Row submitted",
 	}
 
 	json.NewEncoder(w).Encode(res)
+
+	go func() {
+		_, err = supabase.InsertIntoDatabase(rowtoSubmit)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+	}()
 }
 
 func LoadRoutes(muxRouter *mux.Router) {
