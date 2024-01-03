@@ -16,12 +16,12 @@ const (
 )
 
 type FintrackRow struct {
-	Date           string
-	Category       string
-	Expense        string
-	Description    string
-	Method         string
-	OriginalAmount string
+	Date           string `json:"date"`
+	Category       string `json:"category"`
+	Expense        string `json:"expense"`
+	Description    string `json:"description"`
+	Method         string `json:"method"`
+	OriginalAmount string `json:"originalAmount"`
 }
 
 func SubmitRow(expensedata FintrackRow) (*sheets.SpreadsheetsValuesAppendCall, error) {
