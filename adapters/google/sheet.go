@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/carlosdimatteo/fintrack-backend-go/types"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 )
@@ -15,16 +16,7 @@ const (
 	sheetName       = "2024 Fintrack"
 )
 
-type FintrackRow struct {
-	Date           string  `json:"date"`
-	Category       string  `json:"category"`
-	Expense        float64 `json:"expense"`
-	Description    string  `json:"description"`
-	Method         string  `json:"method"`
-	OriginalAmount float64 `json:"originalAmount"`
-}
-
-func SubmitRow(expensedata FintrackRow) (*sheets.SpreadsheetsValuesAppendCall, error) {
+func SubmitExpenseRow(expensedata types.Expense) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	ctx := context.Background()
 	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	data, err := os.ReadFile(credentialsFile)
@@ -38,16 +30,6 @@ func SubmitRow(expensedata FintrackRow) (*sheets.SpreadsheetsValuesAppendCall, e
 		log.Fatal(err)
 		return nil, err
 	}
-
-	/** get metadata as a way to test if adapter works, erase later */
-	// Get metadata about the spreadsheet
-	// spreadsheetService := sheets.NewSpreadsheetsService(sheetService)
-	// metaData, err := spreadsheetService.Get(spreadsheetID).Do()
-	// if err != nil {
-	// 	log.Fatalf("Unable to retrieve spreadsheet metadata: %v", err)
-	// 	return nil, err
-	// }
-	// fmt.Printf("Spreadsheet title: %s\n", metaData.Properties.Title)
 
 	sheetValueService := sheets.NewSpreadsheetsValuesService(sheetService)
 	/**
