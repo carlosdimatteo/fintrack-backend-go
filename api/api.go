@@ -19,6 +19,7 @@ func greet(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Fintrack Server up",
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }
 
@@ -37,8 +38,27 @@ func getBudgets(w http.ResponseWriter, r *http.Request) {
 	res := map[string][]types.BudgetByCategory{
 		"budgets": budgets,
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 
+}
+
+func getConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+	config, err := supabase.GetConfig()
+	if err != nil {
+		ServerErrorResponse(w, r)
+		return
+	}
+	res := map[string][]types.Config{
+		"config": config,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
 }
 
 func getCategories(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +75,7 @@ func getCategories(w http.ResponseWriter, r *http.Request) {
 		ServerErrorResponse(w, r)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }
 
@@ -73,7 +94,12 @@ func submitExpenseRow(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("submitting row :  description:", budgetBycategory.Description, " amount:", budgetBycategory.OriginalAmount, " expense: ", budgetBycategory.Expense)
 	fmt.Println("expense : ", budgetBycategory.Expense)
 	budgetBycategory.Date = time.Now().Format("2006-01-02")
-	_, err := googleSS.SubmitExpenseRow(budgetBycategory)
+	config, err := supabase.GetConfigByType("expense")
+	if err != nil {
+		ServerErrorResponse(w, r)
+		return
+	}
+	_, err = googleSS.SubmitExpenseRow(budgetBycategory, config)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -83,11 +109,11 @@ func submitExpenseRow(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Row submitted",
 	}
-
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 
 	go func() {
-		_, err = supabase.InsertIntoDatabase(budgetBycategory)
+		_, err = supabase.InsertExpenseIntoDatabase(budgetBycategory)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -103,13 +129,15 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	var rowtoSubmit types.Expense
-	json.NewDecoder(r.Body).Decode(&rowtoSubmit)
-	fmt.Println("received: ", rowtoSubmit)
-	fmt.Println("submitting row :  description:", rowtoSubmit.Description, " amount:", rowtoSubmit.OriginalAmount, " expense: ", rowtoSubmit.Expense)
-	fmt.Println("expense : ", rowtoSubmit.Expense)
-	rowtoSubmit.Date = time.Now().Format("2006-01-02")
-	_, err := googleSS.SubmitExpenseRow(rowtoSubmit)
+
+	var arrayOfBudgets []types.Budget
+	json.NewDecoder(r.Body).Decode(&arrayOfBudgets)
+	config, err := supabase.GetConfigByType(types.ConfigType["budget"])
+	if err != nil {
+		ServerErrorResponse(w, r)
+		return
+	}
+	_, err = googleSS.SubmitBudget(arrayOfBudgets, config)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -119,11 +147,12 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Row submitted",
 	}
+	w.Header().Set("Content-Type", "application/json")
 
 	json.NewEncoder(w).Encode(res)
 
 	go func() {
-		_, err = supabase.InsertIntoDatabase(rowtoSubmit)
+		_, err = supabase.InsertBudgetsIntoDatabase(arrayOfBudgets)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -131,7 +160,32 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 	}()
 
 }
+func setConfig(w http.ResponseWriter, r *http.Request) {
+	//Allow CORS here By * or specific origin
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	var arrayOfConfig []types.Config
+	json.NewDecoder(r.Body).Decode(&arrayOfConfig)
+	_, err := supabase.InsertConfigIntoDatabase(arrayOfConfig)
+	if err != nil {
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	res := types.Response{
+		Success: true,
+		Message: "Row submitted",
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	json.NewEncoder(w).Encode(res)
+
+}
 func LoadRoutes(muxRouter *mux.Router) {
 	api := muxRouter.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/", greet).Methods("GET")
@@ -139,6 +193,8 @@ func LoadRoutes(muxRouter *mux.Router) {
 	api.HandleFunc("/budget", setBudgets).Methods("POST", "OPTIONS")
 	api.HandleFunc("/budget", getBudgets).Methods("GET")
 	api.HandleFunc("/categories", getCategories).Methods("GET")
+	api.HandleFunc("/config", getConfig).Methods("GET")
+	api.HandleFunc("/config", setConfig).Methods("POST", "OPTIONS")
 
 }
 
@@ -148,6 +204,7 @@ func NotFoundResponse(w http.ResponseWriter, r *http.Request) {
 		Success: false,
 		Message: "Not Found",
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }
 
@@ -157,5 +214,6 @@ func ServerErrorResponse(w http.ResponseWriter, r *http.Request) {
 		Success: false,
 		Message: "Internal Server Error",
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }
