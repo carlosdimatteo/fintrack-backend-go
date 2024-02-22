@@ -12,14 +12,15 @@ type Category struct {
 }
 
 type Budget struct {
-	Category string  `json:"category"`
-	Amount   float64 `json:"amount"`
-	Spent    float64 `json:"spent"`
+	Id         int32   `json:"id"`
+	CategoryId int32   `json:"category_id"`
+	Amount     float64 `json:"amount"`
 }
 
 type Expense struct {
 	Date           string  `json:"date"`
 	Category       string  `json:"category"`
+	CategoryId     int32   `json:"category_id"`
 	Expense        float64 `json:"expense"`
 	Description    string  `json:"description"`
 	Method         string  `json:"method"`
@@ -31,4 +32,22 @@ type BudgetByCategory struct {
 	Spent        float64 `json:"spent"`
 	CategoryName string  `json:"category_name"`
 	CategoryId   int32   `json:"category_id"`
+}
+
+type Config struct {
+	Sheet   string `json:"sheet"`
+	A1Range string `json:"range"`
+	Type    string `json:"type"`
+}
+
+var ConfigType map[string]string
+
+func init() {
+	ConfigType = map[string]string{
+		"expense":    "expense",
+		"budget":     "budget",
+		"investment": "investment",
+		"category":   "category",
+		"accounting": "accounting",
+	}
 }

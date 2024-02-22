@@ -2,6 +2,7 @@ package googleSS
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 
@@ -16,9 +17,8 @@ const (
 	sheetName       = "2024 Fintrack"
 )
 
-func SubmitExpenseRow(expensedata types.Expense) (*sheets.SpreadsheetsValuesAppendCall, error) {
+func getSheetService() (*sheets.SpreadsheetsValuesService, error) {
 	ctx := context.Background()
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
 		log.Fatal(err)
@@ -32,17 +32,16 @@ func SubmitExpenseRow(expensedata types.Expense) (*sheets.SpreadsheetsValuesAppe
 	}
 
 	sheetValueService := sheets.NewSpreadsheetsValuesService(sheetService)
-	/**
+	return sheetValueService, err
+}
 
-		 [
-	            new Date().toDateString(),
-	            category,
-	            expense,
-	            description,
-	            method,
-	            originalAmount,
-	          ],
-	*/
+func SubmitExpenseRow(expensedata types.Expense, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
+	sheetValueService, err := getSheetService()
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{
 			{expensedata.Date,
@@ -53,9 +52,39 @@ func SubmitExpenseRow(expensedata types.Expense) (*sheets.SpreadsheetsValuesAppe
 				expensedata.OriginalAmount},
 		},
 	}
+	configString := fmt.Sprintf(config.Sheet, config.A1Range)
+	sheetAndRange := func() string {
+		if configString != "" {
+			return configString
+		}
+		return "2024 Fintrack!A:F"
+	}()
 	_, err = sheetValueService.Append(
 		spreadsheetID,
-		"2024 Fintrack!A:F",
+		sheetAndRange,
+		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
+	if err != nil {
+		log.Fatalf("Unable to write data to sheet: %v", err)
+		return nil, err
+	}
+	return nil, nil
+}
+func SubmitBudget(budgets []types.Budget, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
+	sheetValueService, err := getSheetService()
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+	dataToWrite := sheets.ValueRange{
+		Values: [][]interface{}{},
+	}
+	for _, budget := range budgets {
+		dataToWrite.Values = append(dataToWrite.Values, []interface{}{budget.Amount})
+	}
+	_, err = sheetValueService.Append(
+		spreadsheetID,
+		fmt.Sprint(config.Sheet, config.A1Range),
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		log.Fatalf("Unable to write data to sheet: %v", err)
