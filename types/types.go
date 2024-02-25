@@ -6,6 +6,7 @@ type Response struct {
 }
 
 type Category struct {
+	Id          int32  `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	IsEssential bool   `json:"is_essential"`

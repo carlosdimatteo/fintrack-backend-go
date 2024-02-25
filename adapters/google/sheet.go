@@ -52,7 +52,7 @@ func SubmitExpenseRow(expensedata types.Expense, config types.Config) (*sheets.S
 				expensedata.OriginalAmount},
 		},
 	}
-	configString := fmt.Sprintf(config.Sheet, config.A1Range)
+	configString := fmt.Sprint(config.Sheet, config.A1Range)
 	sheetAndRange := func() string {
 		if configString != "" {
 			return configString

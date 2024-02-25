@@ -94,8 +94,9 @@ func submitExpenseRow(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("submitting row :  description:", budgetBycategory.Description, " amount:", budgetBycategory.OriginalAmount, " expense: ", budgetBycategory.Expense)
 	fmt.Println("expense : ", budgetBycategory.Expense)
 	budgetBycategory.Date = time.Now().Format("2006-01-02")
-	config, err := supabase.GetConfigByType("expense")
+	config, err := supabase.GetConfigByType("expenses")
 	if err != nil {
+		fmt.Println("error getting config: ", err)
 		ServerErrorResponse(w, r)
 		return
 	}
