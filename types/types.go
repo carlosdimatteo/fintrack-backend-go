@@ -6,19 +6,20 @@ type Response struct {
 }
 
 type Category struct {
-	Id          int32  `json:"id"`
+	Id          int32  `json:"id,omitempty"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	IsEssential bool   `json:"is_essential"`
 }
 
 type Budget struct {
-	Id         int32   `json:"id"`
+	Id         int32   `json:"id,omitempty"`
 	CategoryId int32   `json:"category_id"`
 	Amount     float64 `json:"amount"`
 }
 
 type Expense struct {
+	Id             int32   `json:"id,omitempty"`
 	Date           string  `json:"date"`
 	Category       string  `json:"category"`
 	CategoryId     int32   `json:"category_id"`
@@ -39,6 +40,59 @@ type Config struct {
 	Sheet   string `json:"sheet"`
 	A1Range string `json:"range"`
 	Type    string `json:"type"`
+}
+
+type Debt struct {
+	Id          int32   `json:"id,omitempty"`
+	Description string  `json:"description"`
+	Amount      float64 `json:"amount"`
+	DebtorId    int32   `json:"debtor_id"`
+	DebtorName  string  `json:"debtor_name"`
+	Date        string  `json:"date"`
+}
+
+type Investment struct {
+	Id          int32   `json:"id,omitempty"`
+	Description string  `json:"description"`
+	Amount      float64 `json:"amount"`
+	AccountId   int32   `json:"account_id"`
+	AccountName string  `json:"account_name"`
+	Date        string  `json:"date"`
+	Type        string  `json:"type"`
+}
+
+type Income struct {
+	Id          int32   `json:"id,omitempty"`
+	Date        string  `json:"date"`
+	Amount      float64 `json:"amount"`
+	Description string  `json:"description"`
+	AccountId   int32   `json:"account_id"`
+	AccountName string  `json:"account_name"`
+}
+
+type Account struct {
+	Id          int32  `json:"id,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Currency    string `json:"currency"`
+	Balance     int32  `json:"balance"`
+}
+
+type InvestmentAccount struct {
+	Id          int32  `json:"id,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Currency    string `json:"currency"`
+	Balance     int32  `json:"balance"`
+	Capital     int32  `json:"capital"`
+}
+
+type Debtor struct {
+	Id          int32  `json:"id,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 var ConfigType map[string]string
