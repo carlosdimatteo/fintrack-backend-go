@@ -485,6 +485,65 @@ func createDebtor(w http.ResponseWriter, r *http.Request) {
 
 func setAccountingForCurrentMonth(w http.ResponseWriter, r *http.Request) {
 	// get account array for accounts and for investment_accounts , then do update for each on balance
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+	var accountToInsert types.RealBalanceByAccounts
+	res := types.RealBalanceByAccounts{Accounts: []types.Account{}, InvestmentAccounts: []types.InvestmentAccount{}}
+	json.NewDecoder(r.Body).Decode(&accountToInsert)
+
+	if len(accountToInsert.Accounts) > 0 {
+		accounts, err := supabase.UpdateAccountBalances(accountToInsert.Accounts)
+		if err != nil {
+			ServerErrorResponse(w, r)
+			return
+		}
+		accountConfig, err := supabase.GetConfigByType(types.ConfigType["accounting_accounts"])
+
+		if err != nil {
+			ServerErrorResponse(w, r)
+			return
+		}
+
+		_, err = googleSS.UpdateAccountBalances(accounts, accountConfig)
+
+		if err != nil {
+			ServerErrorResponse(w, r)
+			return
+		}
+
+		res.Accounts = accounts
+	}
+
+	if len(accountToInsert.InvestmentAccounts) > 0 {
+		investmentAccounts, err := supabase.UpdateInvestmentAccountBalances(accountToInsert.InvestmentAccounts)
+		if err != nil {
+			ServerErrorResponse(w, r)
+			return
+		}
+		investmentAccountConfig, err := supabase.GetConfigByType(types.ConfigType["accounting_investment_accounts"])
+
+		if err != nil {
+			ServerErrorResponse(w, r)
+			return
+		}
+
+		_, err = googleSS.UpdateInvestmentAccountBalances(investmentAccounts, investmentAccountConfig)
+
+		if err != nil {
+			ServerErrorResponse(w, r)
+			return
+		}
+
+		res.InvestmentAccounts = investmentAccounts
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
 
 }
 

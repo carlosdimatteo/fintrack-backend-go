@@ -18,7 +18,7 @@ func getSupabaseClient() (*supa.Client, error) {
 		Email:    os.Getenv("SUPABASE_USER"),
 		Password: os.Getenv("SUPABASE_USER_PWD"),
 	})
-	fmt.Println("supabase user", user.User.Email)
+
 	if err != nil {
 		fmt.Println(err)
 		// log.Fatal(err)
@@ -26,8 +26,7 @@ func getSupabaseClient() (*supa.Client, error) {
 	}
 
 	supabase.DB.AddHeader("Authorization", "Bearer "+user.AccessToken)
-	header := supabase.DB.Headers().Get("Authorization")
-	fmt.Println(header)
+	supabase.DB.Headers().Get("Authorization")
 
 	return supabase, nil
 }
@@ -272,21 +271,29 @@ func InsertAccountIntoDatabase(rowToinsert types.Account) (types.Account, error)
 }
 
 func UpdateAccountBalances(toUpdate []types.Account) ([]types.Account, error) {
+	var results []types.Account
 	supabase, err := getSupabaseClient()
 	if err != nil {
 		fmt.Println(err)
 		// log.Fatal(err)
 		return nil, err
 	}
-	var results []types.Account
-	query := supabase.DB.From("accounts").Update(toUpdate)
-	err = query.Execute(&results)
-	if err != nil {
-		fmt.Println(err)
-		// log.Fatal(err)
-		return nil, err
-	}
 
+	for _, account := range toUpdate {
+		var accountResult []types.Account
+		stringId := fmt.Sprint(account.Id)
+
+		query := supabase.DB.From("accounts").Update(account).Eq("id", stringId)
+		err = query.Execute(&accountResult)
+		if err != nil {
+			fmt.Println(err)
+			// log.Fatal(err)
+			return nil, err
+		}
+		if len(accountResult) > 0 {
+			results = append(results, accountResult[0])
+		}
+	}
 	fmt.Println("results", results) // Inserted rows
 	return results, nil
 
@@ -332,19 +339,28 @@ func InsertInvestmentAccountIntoDatabase(rowToinsert types.InvestmentAccount) ([
 
 func UpdateInvestmentAccountBalances(toUpdate []types.InvestmentAccount) ([]types.InvestmentAccount, error) {
 
+	var results []types.InvestmentAccount
 	supabase, err := getSupabaseClient()
 	if err != nil {
 		fmt.Println(err)
 		// log.Fatal(err)
 		return nil, err
 	}
-	var results []types.InvestmentAccount
-	query := supabase.DB.From("investment_accounts").Update(toUpdate)
-	err = query.Execute(&results)
-	if err != nil {
-		fmt.Println(err)
-		// log.Fatal(err)
-		return nil, err
+
+	for _, account := range toUpdate {
+		var accountResult []types.InvestmentAccount
+
+		query := supabase.DB.From("investment_accounts").Update(account).Eq("id", fmt.Sprint(account.Id))
+		err = query.Execute(&accountResult)
+		if err != nil {
+			fmt.Println(err)
+			// log.Fatal(err)
+			return nil, err
+		}
+		if len(accountResult) > 0 {
+
+			results = append(results, accountResult[0])
+		}
 	}
 
 	fmt.Println("results", results) // Inserted rows

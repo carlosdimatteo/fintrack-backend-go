@@ -71,22 +71,22 @@ type Income struct {
 }
 
 type Account struct {
-	Id          int32  `json:"id,omitempty"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Type        string `json:"type"`
-	Currency    string `json:"currency"`
-	Balance     int32  `json:"balance"`
+	Id          int32   `json:"id,omitempty"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Type        string  `json:"type"`
+	Currency    string  `json:"currency"`
+	Balance     float64 `json:"balance"`
 }
 
 type InvestmentAccount struct {
-	Id          int32  `json:"id,omitempty"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Type        string `json:"type"`
-	Currency    string `json:"currency"`
-	Balance     int32  `json:"balance"`
-	Capital     int32  `json:"capital"`
+	Id          int32   `json:"id,omitempty"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Type        string  `json:"type"`
+	Currency    string  `json:"currency"`
+	Balance     float64 `json:"balance"`
+	Capital     float64 `json:"capital,omitempty"`
 }
 
 type Debtor struct {
@@ -95,14 +95,20 @@ type Debtor struct {
 	Description string `json:"description"`
 }
 
+type RealBalanceByAccounts struct {
+	Accounts           []Account           `json:"accounts"`
+	InvestmentAccounts []InvestmentAccount `json:"investment_accounts,omitempty"`
+}
+
 var ConfigType map[string]string
 
 func init() {
 	ConfigType = map[string]string{
-		"expense":    "expense",
-		"budget":     "budget",
-		"investment": "investment",
-		"category":   "category",
-		"accounting": "accounting",
+		"expense":                        "expense",
+		"budget":                         "budget",
+		"investment":                     "investment",
+		"category":                       "category",
+		"accounting_accounts":            "accounting_accounts",
+		"accounting_investment_accounts": "accounting_investment_accounts",
 	}
 }

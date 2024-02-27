@@ -205,7 +205,36 @@ func SubmitAccount(account types.Account, config types.Config) (*sheets.Spreadsh
 	}
 	return nil, nil
 }
+func UpdateAccountBalances(accounts []types.Account, config types.Config) (*sheets.SpreadsheetsValuesUpdateCall, error) {
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
+	sheetValueService, err := getSheetService()
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
 
+	dataToWrite := sheets.ValueRange{
+		Values: [][]interface{}{},
+		Range:  fmt.Sprint(config.Sheet, config.A1Range),
+	}
+	for _, account := range accounts {
+
+		dataToWrite.Values = append(dataToWrite.Values, []interface{}{account.Balance})
+	}
+	batchUpdateValueReq := sheets.BatchUpdateValuesRequest{
+		Data:             []*sheets.ValueRange{&dataToWrite},
+		ValueInputOption: "USER_ENTERED",
+	}
+	_, err = sheetValueService.BatchUpdate(
+		spreadsheetID,
+		&batchUpdateValueReq).Do()
+	if err != nil {
+		log.Fatalf("Unable to write data to sheet: %v", err)
+		return nil, err
+	}
+	return nil, nil
+
+}
 func SubmitInvestmentAccount(investmentAccount types.InvestmentAccount, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
@@ -233,6 +262,36 @@ func SubmitInvestmentAccount(investmentAccount types.InvestmentAccount, config t
 	return nil, nil
 }
 
+func UpdateInvestmentAccountBalances(accounts []types.InvestmentAccount, config types.Config) (*sheets.SpreadsheetsValuesUpdateCall, error) {
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
+	sheetValueService, err := getSheetService()
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	dataToWrite := sheets.ValueRange{
+		Values: [][]interface{}{},
+		Range:  fmt.Sprint(config.Sheet, config.A1Range),
+	}
+	for _, account := range accounts {
+
+		dataToWrite.Values = append(dataToWrite.Values, []interface{}{account.Balance})
+	}
+	batchUpdateValueReq := sheets.BatchUpdateValuesRequest{
+		Data:             []*sheets.ValueRange{&dataToWrite},
+		ValueInputOption: "USER_ENTERED",
+	}
+	_, err = sheetValueService.BatchUpdate(
+		spreadsheetID,
+		&batchUpdateValueReq).Do()
+	if err != nil {
+		log.Fatalf("Unable to write data to sheet: %v", err)
+		return nil, err
+	}
+	return nil, nil
+
+}
 func SubmitDebtor(debtor types.Debtor, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
