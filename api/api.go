@@ -285,7 +285,7 @@ func submitIncome(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("submitting row :  description:", income.Description, " amount:", income.Amount, " account: ", income.AccountName)
 	fmt.Println("amount : ", income.Amount)
 	income.Date = time.Now().Format("2006-01-02")
-	config, err := supabase.GetConfigByType("incomes")
+	config, err := supabase.GetConfigByType("income")
 	if err != nil {
 		fmt.Println("error getting config: ", err)
 		ServerErrorResponse(w, r)
