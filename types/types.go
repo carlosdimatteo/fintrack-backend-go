@@ -27,6 +27,7 @@ type Expense struct {
 	Description    string  `json:"description"`
 	Method         string  `json:"method"`
 	OriginalAmount float64 `json:"originalAmount"`
+	AccountId      int32   `json:"account_id"`
 }
 
 type BudgetByCategory struct {
