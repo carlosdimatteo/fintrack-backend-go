@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 
 	"github.com/carlosdimatteo/fintrack-backend-go/types"
 	"google.golang.org/api/option"
@@ -49,7 +50,10 @@ func SubmitExpenseRow(expensedata types.Expense, config types.Config) (*sheets.S
 				expensedata.Expense,
 				expensedata.Description,
 				expensedata.Method,
-				expensedata.OriginalAmount},
+				expensedata.OriginalAmount,
+				expensedata.CategoryId,
+				expensedata.AccountId,
+				expensedata.AccountType},
 		},
 	}
 	configString := fmt.Sprint(config.Sheet, config.A1Range)
@@ -57,7 +61,7 @@ func SubmitExpenseRow(expensedata types.Expense, config types.Config) (*sheets.S
 		if configString != "" {
 			return configString
 		}
-		return "2024 Fintrack!A:F"
+		return "2024 Fintrack!A:I"
 	}()
 	_, err = sheetValueService.Append(
 		spreadsheetID,
@@ -217,6 +221,9 @@ func UpdateAccountBalances(accounts []types.Account, config types.Config) (*shee
 		Values: [][]interface{}{},
 		Range:  fmt.Sprint(config.Sheet, config.A1Range),
 	}
+	sort.Slice(accounts, func(i, j int) bool {
+		return accounts[i].Id < accounts[j].Id
+	})
 	for _, account := range accounts {
 
 		dataToWrite.Values = append(dataToWrite.Values, []interface{}{account.Balance})
@@ -274,6 +281,9 @@ func UpdateInvestmentAccountBalances(accounts []types.InvestmentAccount, config 
 		Values: [][]interface{}{},
 		Range:  fmt.Sprint(config.Sheet, config.A1Range),
 	}
+	sort.Slice(accounts, func(i, j int) bool {
+		return accounts[i].Id < accounts[j].Id
+	})
 	for _, account := range accounts {
 
 		dataToWrite.Values = append(dataToWrite.Values, []interface{}{account.Balance})
