@@ -385,6 +385,25 @@ func GetDebtors() ([]types.Debtor, error) {
 	return results, nil
 }
 
+func GetDebtorsWithDebts() ([]types.DebtByDebtor, error) {
+	supabase, err := getSupabaseClient()
+	if err != nil {
+		fmt.Println(err)
+		// log.Fatal(err)
+		return nil, err
+	}
+	results := []types.DebtByDebtor{}
+	err = supabase.DB.From("debt_by_debtor").Select().Execute(&results)
+	if err != nil {
+		fmt.Println(err)
+		// log.Fatal(err)
+		return nil, err
+	}
+
+	fmt.Println(results)
+	return results, nil
+}
+
 func InsertDebtorIntoDatabase(rowToinsert types.Debtor) ([]types.Debtor, error) {
 	supabase, err := getSupabaseClient()
 	if err != nil {
