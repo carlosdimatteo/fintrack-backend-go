@@ -70,6 +70,7 @@ type Income struct {
 	Description string  `json:"description"`
 	AccountId   int32   `json:"account_id"`
 	AccountName string  `json:"account_name"`
+	CreatedAt   string  `json:"created_at,omitempty"`
 }
 
 type Account struct {

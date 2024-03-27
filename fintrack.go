@@ -8,17 +8,16 @@ import (
 
 	"github.com/carlosdimatteo/fintrack-backend-go/api"
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 
-	/**
-	TODO:
-		. Load database connection (supabase) from a separate file
-		. add google adapter package for handling google spreadsheet api calls
+	err := godotenv.Load(".env")
 
-	*/
-
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
 	muxRouter := mux.NewRouter()
 	api.LoadRoutes(muxRouter)
 	fmt.Println("API routes loaded")

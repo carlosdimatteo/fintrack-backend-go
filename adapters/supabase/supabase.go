@@ -40,16 +40,14 @@ func GetCategories() ([]types.Category, error) {
 		Email:    os.Getenv("SUPABASE_USER"),
 		Password: os.Getenv("SUPABASE_USER_PWD"),
 	})
-	fmt.Println("supabase user", user.User.Email)
 	if err != nil {
 		fmt.Println(err)
 		// log.Fatal(err)
 		return nil, err
 	}
+	fmt.Println("supabase user", user.User.Email)
 	var results []types.Category
 	supabase.DB.AddHeader("Authorization", "Bearer "+user.AccessToken)
-	header := supabase.DB.Headers().Get("Authorization")
-	fmt.Println(header)
 	err = supabase.DB.From("categories").Select().Execute(&results)
 	if err != nil {
 		fmt.Println(err)
