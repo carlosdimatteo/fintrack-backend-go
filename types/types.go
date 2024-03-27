@@ -1,15 +1,18 @@
 package types
 
+import "time"
+
 type Response struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 }
 
 type Category struct {
-	Id          int32  `json:"id,omitempty"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	IsEssential bool   `json:"is_essential"`
+	Id          int32     `json:"id,omitempty"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	IsEssential bool      `json:"is_essential"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
 }
 
 type Budget struct {
@@ -38,6 +41,15 @@ type BudgetByCategory struct {
 	CategoryId   int32   `json:"category_id"`
 }
 
+type DebtByDebtor struct {
+	DebtorId            int32   `json:"debtor_id"`
+	DebtorName          string  `json:"debtor_name"`
+	NetAmount           float64 `json:"net_amount"`
+	TotalAmountBorrowed float64 `json:"total_amount_borrowed"`
+	TotalAmountLent     float64 `json:"total_amount_lent"`
+	TransactionCount    int32   `json:"transaction_count"`
+}
+
 type Config struct {
 	Sheet   string `json:"sheet"`
 	A1Range string `json:"range"`
@@ -45,12 +57,16 @@ type Config struct {
 }
 
 type Debt struct {
-	Id          int32   `json:"id,omitempty"`
-	Description string  `json:"description"`
-	Amount      float64 `json:"amount"`
-	DebtorId    int32   `json:"debtor_id"`
-	DebtorName  string  `json:"debtor_name"`
-	Date        string  `json:"date"`
+	Id             int32     `json:"id,omitempty"`
+	Description    string    `json:"description"`
+	Amount         float64   `json:"amount"`
+	DebtorId       int32     `json:"debtor_id"`
+	DebtorName     string    `json:"debtor_name"`
+	Date           string    `json:"date"`
+	CreatedAt      time.Time `json:"created_at,omitempty"`
+	OriginalAmount float64   `json:"original_amount"`
+	Currency       string    `json:"currency"`
+	Outbound       bool      `json:"outbound"`
 }
 
 type Investment struct {
@@ -64,13 +80,13 @@ type Investment struct {
 }
 
 type Income struct {
-	Id          int32   `json:"id,omitempty"`
-	Date        string  `json:"date"`
-	Amount      float64 `json:"amount"`
-	Description string  `json:"description"`
-	AccountId   int32   `json:"account_id"`
-	AccountName string  `json:"account_name"`
-	CreatedAt   string  `json:"created_at,omitempty"`
+	Id          int32     `json:"id,omitempty"`
+	Date        string    `json:"date,omitempty"`
+	Amount      float64   `json:"amount"`
+	Description string    `json:"description"`
+	AccountId   int32     `json:"account_id"`
+	AccountName string    `json:"account_name"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
 }
 
 type Account struct {
@@ -95,6 +111,8 @@ type InvestmentAccount struct {
 type Debtor struct {
 	Id          int32  `json:"id,omitempty"`
 	Name        string `json:"name"`
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name"`
 	Description string `json:"description"`
 }
 

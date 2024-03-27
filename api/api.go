@@ -55,7 +55,7 @@ func submitExpenseRow(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("received: ", expense)
 	fmt.Println("submitting row :  description:", expense.Description, " amount:", expense.OriginalAmount, " expense: ", expense.Expense)
 	fmt.Println("expense : ", expense.Expense)
-	expense.Date = time.Now().Format("2006-01-02")
+	expense.Date = time.Now().Format(time.DateTime)
 	config, err := supabase.GetConfigByType("expenses")
 	if err != nil {
 		fmt.Println("error getting config: ", err)
@@ -199,7 +199,7 @@ func submitInvestment(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("received investment: ", investment)
 	fmt.Println("submitting row :  description:", investment.Description, " amount:", investment.Amount, " account: ", investment.AccountName)
 	fmt.Println("amount : ", investment.Amount)
-	investment.Date = time.Now().Format("2006-01-02")
+	investment.Date = time.Now().Format(time.DateTime)
 	config, err := supabase.GetConfigByType("investments")
 	if err != nil {
 		fmt.Println("error getting config: ", err)
@@ -241,8 +241,8 @@ func submitDebt(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("received debt: ", debt)
 	fmt.Println("submitting row :  description:", debt.Description, " amount:", debt.Amount, " debtor: ", debt.DebtorName)
 	fmt.Println("amount : ", debt.Amount)
-	debt.Date = time.Now().Format("2006-01-02")
-	config, err := supabase.GetConfigByType("debts")
+	debt.Date = time.Now().Format(time.DateTime)
+	config, err := supabase.GetConfigByType("debt")
 	if err != nil {
 		fmt.Println("error getting config: ", err)
 		ServerErrorResponse(w, r)
@@ -253,14 +253,12 @@ func submitDebt(w http.ResponseWriter, r *http.Request) {
 		ServerErrorResponse(w, r)
 		return
 	}
-
 	res := types.Response{
 		Success: true,
 		Message: "Row submitted",
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
-
 	go func() {
 		_, err = supabase.InsertDebtIntoDatabase(debt)
 		if err != nil {
@@ -284,7 +282,7 @@ func submitIncome(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("received income: ", income)
 	fmt.Println("submitting row :  description:", income.Description, " amount:", income.Amount, " account: ", income.AccountName)
 	fmt.Println("amount : ", income.Amount)
-	income.Date = time.Now().Format("2006-01-02")
+	income.Date = time.Now().Format(time.DateTime)
 	config, err := supabase.GetConfigByType("income")
 	if err != nil {
 		fmt.Println("error getting config: ", err)
@@ -447,6 +445,25 @@ func getDebtors(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+func getDebtorsWithDebts(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+	result, err := supabase.GetDebtorsWithDebts()
+	if err != nil {
+		ServerErrorResponse(w, r)
+		return
+	}
+	res := map[string][]types.DebtByDebtor{
+		"result": result,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
 func createDebtor(w http.ResponseWriter, r *http.Request) {
 	// Allow CORS here By * or specific origin
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -568,6 +585,7 @@ func LoadRoutes(muxRouter *mux.Router) {
 	api.HandleFunc("/investment-accounts", createInvestmentAccount).Methods("POST", "OPTIONS")
 	api.HandleFunc("/debtors", getDebtors).Methods("GET")
 	api.HandleFunc("/debtors", createDebtor).Methods("POST", "OPTIONS")
+	api.HandleFunc("/debtors/debt", getDebtorsWithDebts).Methods("GET")
 	api.HandleFunc("/accounting", setAccountingForCurrentMonth).Methods("POST", "OPTIONS")
 }
 

@@ -160,6 +160,10 @@ func SubmitDebt(debt types.Debt, config types.Config) (*sheets.SpreadsheetsValue
 		log.Fatal(err)
 		return nil, err
 	}
+	typeString := "Borrowed"
+	if debt.Outbound {
+		typeString = "Lent"
+	}
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{
 			{debt.Date,
@@ -167,6 +171,8 @@ func SubmitDebt(debt types.Debt, config types.Config) (*sheets.SpreadsheetsValue
 				debt.DebtorName,
 				debt.Description,
 				debt.Amount,
+				typeString,
+				debt.Outbound,
 			},
 		},
 	}
