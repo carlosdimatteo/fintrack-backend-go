@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	googleSS "github.com/carlosdimatteo/fintrack-backend-go/adapters/google"
@@ -83,6 +84,58 @@ func submitExpenseRow(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 }
+
+func getExpenses(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+	// Get query parameters as strings
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	// Convert limit to int with error handling
+	limit := 10 // default value
+	if limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			http.Error(w, "Invalid limit parameter", http.StatusBadRequest)
+			return
+		}
+		limit = parsedLimit
+	}
+
+	// Convert offset to int with error handling
+	offset := 0 // default value
+	if offsetStr != "" {
+		parsedOffset, err := strconv.Atoi(offsetStr)
+		if err != nil {
+			http.Error(w, "Invalid offset parameter", http.StatusBadRequest)
+			return
+		}
+		offset = parsedOffset
+	}
+
+	expenses, count, err := supabase.GetExpenses(limit, offset)
+	if err != nil {
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	// Create response structure with all fields
+	res := map[string]interface{}{
+		"expenses": expenses,
+		"limit":    limit,
+		"offset":   offset,
+		"count":    count,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
 func getBudgets(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -309,6 +362,57 @@ func submitIncome(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}()
+}
+
+func getIncomes(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+	// Get query parameters as strings
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	// Convert limit to int with error handling
+	limit := 10 // default value
+	if limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			http.Error(w, "Invalid limit parameter", http.StatusBadRequest)
+			return
+		}
+		limit = parsedLimit
+	}
+
+	// Convert offset to int with error handling
+	offset := 0 // default value
+	if offsetStr != "" {
+		parsedOffset, err := strconv.Atoi(offsetStr)
+		if err != nil {
+			http.Error(w, "Invalid offset parameter", http.StatusBadRequest)
+			return
+		}
+		offset = parsedOffset
+	}
+
+	incomes, count, err := supabase.GetIncomes(limit, offset)
+	if err != nil {
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	// Create response structure with all fields
+	res := map[string]interface{}{
+		"incomes": incomes,
+		"limit":   limit,
+		"offset":  offset,
+		"count":   count,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
 }
 
 func getAccounts(w http.ResponseWriter, r *http.Request) {
@@ -568,6 +672,7 @@ func LoadRoutes(muxRouter *mux.Router) {
 	api := muxRouter.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/", greet).Methods("GET")
 	api.HandleFunc("/submit", submitExpenseRow).Methods("POST", "OPTIONS")
+	api.HandleFunc("/expenses", getExpenses).Methods("GET", "OPTIONS")
 	api.HandleFunc("/budget", setBudgets).Methods("POST", "OPTIONS")
 	api.HandleFunc("/budget", getBudgets).Methods("GET")
 	api.HandleFunc("/categories", getCategories).Methods("GET")
@@ -578,7 +683,7 @@ func LoadRoutes(muxRouter *mux.Router) {
 	api.HandleFunc("/debt", submitDebt).Methods("POST", "OPTIONS")
 	// api.HandleFunc("/debt", getDebts).Methods("GET")
 	api.HandleFunc("/income", submitIncome).Methods("POST", "OPTIONS")
-	// api.HandleFunc("/income", getIncome).Methods("GET")
+	api.HandleFunc("/income", getIncomes).Methods("GET")
 	api.HandleFunc("/accounts", getAccounts).Methods("GET")
 	api.HandleFunc("/accounts", createAccount).Methods("POST", "OPTIONS")
 	api.HandleFunc("/investment-accounts", getInvestmentAccounts).Methods("GET")

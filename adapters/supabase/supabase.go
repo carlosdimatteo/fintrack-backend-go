@@ -175,6 +175,35 @@ func InsertExpenseIntoDatabase(rowToInsert types.Expense) ([]types.Expense, erro
 	fmt.Println(results) // Inserted rows
 	return results, nil
 }
+
+func GetExpenses(limit int, offset int) ([]types.Expense, int, error) {
+	supabase, err := getSupabaseClient()
+	if err != nil {
+		fmt.Println(err)
+		// log.Fatal(err)
+		return nil, 0, err
+	}
+	results := []types.Expense{}
+
+	// Get total count first
+	var count int
+	err = supabase.DB.From("expenses").Select("id", "count").Single().Execute(&count)
+	if err != nil {
+		fmt.Println(err)
+		return nil, 0, err
+	}
+
+	err = supabase.DB.From("expenses").Select().LimitWithOffset(limit, offset).Execute(&results)
+	if err != nil {
+		fmt.Println(err)
+		// log.Fatal(err)
+		return nil, 0, err
+	}
+
+	fmt.Println(results)
+	return results, count, nil
+}
+
 func InsertDebtIntoDatabase(rowToinsert types.Debt) ([]types.Debt, error) {
 	supabase, err := getSupabaseClient()
 	if err != nil {
@@ -211,6 +240,34 @@ func InsertIncomeIntoDatabase(rowToinsert types.Income) ([]types.Income, error) 
 
 	fmt.Println(results) // Inserted rows
 	return results, nil
+}
+
+func GetIncomes(limit int, offset int) ([]types.Income, int, error) {
+	supabase, err := getSupabaseClient()
+	if err != nil {
+		fmt.Println(err)
+		// log.Fatal(err)
+		return nil, 0, err
+	}
+	results := []types.Income{}
+
+	// Get total count first
+	var count int
+	err = supabase.DB.From("incomes").Select("id", "count").Single().Execute(&count)
+	if err != nil {
+		fmt.Println(err)
+		return nil, 0, err
+	}
+
+	err = supabase.DB.From("incomes").Select().LimitWithOffset(limit, offset).Execute(&results)
+	if err != nil {
+		fmt.Println(err)
+		// log.Fatal(err)
+		return nil, 0, err
+	}
+
+	fmt.Println(results)
+	return results, count, nil
 }
 
 func InsertInvestmentIntoDatabase(rowToinsert types.Investment) ([]types.Investment, error) {
