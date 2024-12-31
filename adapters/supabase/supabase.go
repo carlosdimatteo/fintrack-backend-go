@@ -187,12 +187,15 @@ func GetExpenses(limit int, offset int) ([]types.Expense, int, error) {
 
 	// Get total count first
 	var count int
-	err = supabase.DB.From("expenses").Select("id", "count").Single().Execute(&count)
+	var countResult struct {
+		Count int `json:"count"`
+	}
+	err = supabase.DB.From("expenses").Select("count").Single().Execute(&countResult)
 	if err != nil {
 		fmt.Println(err)
 		return nil, 0, err
 	}
-
+	count = countResult.Count
 	err = supabase.DB.From("expenses").Select().LimitWithOffset(limit, offset).Execute(&results)
 	if err != nil {
 		fmt.Println(err)
@@ -253,11 +256,15 @@ func GetIncomes(limit int, offset int) ([]types.Income, int, error) {
 
 	// Get total count first
 	var count int
-	err = supabase.DB.From("incomes").Select("id", "count").Single().Execute(&count)
+	var countResult struct {
+		Count int `json:"count"`
+	}
+	err = supabase.DB.From("incomes").Select("count").Single().Execute(&countResult)
 	if err != nil {
 		fmt.Println(err)
 		return nil, 0, err
 	}
+	count = countResult.Count
 
 	err = supabase.DB.From("incomes").Select().LimitWithOffset(limit, offset).Execute(&results)
 	if err != nil {
