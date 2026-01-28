@@ -44,9 +44,9 @@ type BudgetByCategory struct {
 type DebtByDebtor struct {
 	DebtorId         int32   `json:"debtor_id"`
 	DebtorName       string  `json:"debtor_name"`
-	TotalLent        float64 `json:"total_lent"`        // Phase 1B - renamed
-	TotalReceived    float64 `json:"total_received"`    // Phase 1B - renamed
-	NetOwed          float64 `json:"net_owed"`          // Phase 1B - renamed (positive = they owe you)
+	TotalLent        float64 `json:"total_lent"`     // Phase 1B - renamed
+	TotalReceived    float64 `json:"total_received"` // Phase 1B - renamed
+	NetOwed          float64 `json:"net_owed"`       // Phase 1B - renamed (positive = they owe you)
 	TransactionCount int32   `json:"transaction_count"`
 }
 
@@ -77,11 +77,11 @@ type Investment struct {
 	Id              int32   `json:"id,omitempty"`
 	Description     string  `json:"description"`
 	Amount          float64 `json:"amount"`
-	AccountId       int32   `json:"account_id"`       // Investment account ID
-	AccountName     string  `json:"account_name"`     // Investment account name
+	AccountId       int32   `json:"account_id"`   // Investment account ID
+	AccountName     string  `json:"account_name"` // Investment account name
 	Date            string  `json:"date"`
-	Type            string  `json:"type"`                           // "deposit" or "withdrawal"
-	SourceAccountId *int32  `json:"source_account_id,omitempty"`    // Fiat account funds come from/go to
+	Type            string  `json:"type"`                        // "deposit" or "withdrawal"
+	SourceAccountId *int32  `json:"source_account_id,omitempty"` // Fiat account funds come from/go to
 }
 
 type Income struct {
@@ -111,10 +111,10 @@ type InvestmentAccount struct {
 	Description     string    `json:"description"`
 	Type            string    `json:"type"`
 	Currency        string    `json:"currency"`
-	Balance         float64   `json:"balance"`                        // Real balance from reconciliation
-	Capital         float64   `json:"capital,omitempty"`              // Running total capital
-	StartingCapital float64   `json:"starting_capital,omitempty"`     // Phase 1 - fixed starting point
-	StartingDate    time.Time `json:"starting_date,omitempty"`        // Phase 1 - when tracking started
+	Balance         float64   `json:"balance"`                    // Real balance from reconciliation
+	Capital         float64   `json:"capital,omitempty"`          // Running total capital
+	StartingCapital float64   `json:"starting_capital,omitempty"` // Phase 1 - fixed starting point
+	StartingDate    time.Time `json:"starting_date,omitempty"`    // Phase 1 - when tracking started
 }
 
 type Debtor struct {
@@ -152,20 +152,20 @@ type Transfer struct {
 
 // AccountExpectedBalance from the view (Phase 1B)
 type AccountExpectedBalance struct {
-	Id                        int32     `json:"id"`
-	Name                      string    `json:"name"`
-	Currency                  string    `json:"currency"`
-	StartingBalance           float64   `json:"starting_balance"`
-	StartingDate              time.Time `json:"starting_date"`
-	TotalIncome               float64   `json:"total_income"`
-	TotalExpenses             float64   `json:"total_expenses"`
-	TotalInvestmentDeposits   float64   `json:"total_investment_deposits"`
-	TotalInvestmentWithdrawals float64  `json:"total_investment_withdrawals"`
-	TotalTransfersOut         float64   `json:"total_transfers_out"`
-	TotalTransfersIn          float64   `json:"total_transfers_in"`
-	ExpectedBalance           float64   `json:"expected_balance"`
-	RealBalance               float64   `json:"real_balance"`
-	Discrepancy               float64   `json:"discrepancy"`
+	Id                         int32     `json:"id"`
+	Name                       string    `json:"name"`
+	Currency                   string    `json:"currency"`
+	StartingBalance            float64   `json:"starting_balance"`
+	StartingDate               time.Time `json:"starting_date"`
+	TotalIncome                float64   `json:"total_income"`
+	TotalExpenses              float64   `json:"total_expenses"`
+	TotalInvestmentDeposits    float64   `json:"total_investment_deposits"`
+	TotalInvestmentWithdrawals float64   `json:"total_investment_withdrawals"`
+	TotalTransfersOut          float64   `json:"total_transfers_out"`
+	TotalTransfersIn           float64   `json:"total_transfers_in"`
+	ExpectedBalance            float64   `json:"expected_balance"`
+	RealBalance                float64   `json:"real_balance"`
+	Discrepancy                float64   `json:"discrepancy"`
 }
 
 // InvestmentAccountSummary from the view (Phase 1)
@@ -193,23 +193,23 @@ type YearlyGoals struct {
 
 // NetWorthSnapshot represents a monthly snapshot of net worth (Phase 4)
 type NetWorthSnapshot struct {
-	Id                      int32     `json:"id,omitempty"`
-	CreatedAt               time.Time `json:"created_at,omitempty"`
-	Date                    time.Time `json:"date"`
-	Year                    int       `json:"year"`
-	Month                   int       `json:"month"`
-	TotalFiatBalance        float64   `json:"total_fiat_balance"`
-	CryptoBalance           float64   `json:"crypto_balance"`
-	CryptoCapital           float64   `json:"crypto_capital"`
-	BrokerBalance           float64   `json:"broker_balance"`
-	BrokerCapital           float64   `json:"broker_capital"`
-	TotalInvestmentBalance  float64   `json:"total_investment_balance"`
-	TotalInvestmentCapital  float64   `json:"total_investment_capital"`
-	TotalNetWorth           float64   `json:"total_net_worth"`
-	TotalPnL                float64   `json:"total_pnl"`
-	FiatPercent             float64   `json:"fiat_percent"`
-	CryptoPercent           float64   `json:"crypto_percent"`
-	BrokerPercent           float64   `json:"broker_percent"`
+	Id                     int32     `json:"id,omitempty"`
+	CreatedAt              time.Time `json:"created_at,omitempty"`
+	Date                   time.Time `json:"date"`
+	Year                   int       `json:"year"`
+	Month                  int       `json:"month"`
+	TotalFiatBalance       float64   `json:"total_fiat_balance"`
+	CryptoBalance          float64   `json:"crypto_balance"`
+	CryptoCapital          float64   `json:"crypto_capital"`
+	BrokerBalance          float64   `json:"broker_balance"`
+	BrokerCapital          float64   `json:"broker_capital"`
+	TotalInvestmentBalance float64   `json:"total_investment_balance"`
+	TotalInvestmentCapital float64   `json:"total_investment_capital"`
+	TotalNetWorth          float64   `json:"total_net_worth"`
+	TotalPnL               float64   `json:"total_pnl"`
+	FiatPercent            float64   `json:"fiat_percent"`
+	CryptoPercent          float64   `json:"crypto_percent"`
+	BrokerPercent          float64   `json:"broker_percent"`
 }
 
 var ConfigType map[string]string

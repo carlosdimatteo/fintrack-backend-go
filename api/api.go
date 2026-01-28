@@ -148,7 +148,7 @@ func getBudgets(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	budgets, err := supabase.GetBudgets()
+	budgets, err := postgres.GetBudgets()
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -172,7 +172,7 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 
 	var arrayOfBudgets []types.Budget
 	json.NewDecoder(r.Body).Decode(&arrayOfBudgets)
-	config, err := supabase.GetConfigByType(types.ConfigType["budget"])
+	config, err := postgres.GetConfigByType(types.ConfigType["budget"])
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -192,6 +192,7 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 
 	go func() {
+		// TODO: Migrate InsertBudgetsIntoDatabase to postgres
 		_, err = supabase.InsertBudgetsIntoDatabase(arrayOfBudgets)
 		if err != nil {
 			log.Fatal(err)
@@ -206,7 +207,7 @@ func getConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	config, err := supabase.GetConfig()
+	config, err := postgres.GetConfig()
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -228,6 +229,7 @@ func setConfig(w http.ResponseWriter, r *http.Request) {
 
 	var arrayOfConfig []types.Config
 	json.NewDecoder(r.Body).Decode(&arrayOfConfig)
+	// TODO: Migrate InsertConfigIntoDatabase to postgres
 	_, err := supabase.InsertConfigIntoDatabase(arrayOfConfig)
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -337,7 +339,7 @@ func submitDebt(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("submitting row :  description:", debt.Description, " amount:", debt.Amount, " debtor: ", debt.DebtorName)
 	fmt.Println("amount : ", debt.Amount)
 	debt.Date = time.Now().Format(time.DateTime)
-	config, err := supabase.GetConfigByType("debt")
+	config, err := postgres.GetConfigByType("debt")
 	if err != nil {
 		fmt.Println("error getting config: ", err)
 		ServerErrorResponse(w, r)
@@ -348,19 +350,21 @@ func submitDebt(w http.ResponseWriter, r *http.Request) {
 		ServerErrorResponse(w, r)
 		return
 	}
+
+	// Insert into database (fail on error)
+	_, err = postgres.InsertDebt(debt)
+	if err != nil {
+		log.Printf("Error inserting debt to database: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
 	res := types.Response{
 		Success: true,
-		Message: "Row submitted",
+		Message: "Debt submitted",
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
-	go func() {
-		_, err = supabase.InsertDebtIntoDatabase(debt)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-	}()
 }
 
 func submitIncome(w http.ResponseWriter, r *http.Request) {
@@ -476,7 +480,7 @@ func getIncomes(w http.ResponseWriter, r *http.Request) {
 		offset = parsedOffset
 	}
 
-	incomes, count, err := supabase.GetIncomes(limit, offset)
+	incomes, count, err := postgres.GetIncomes(limit, offset)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -500,7 +504,7 @@ func getAccounts(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	accounts, err := supabase.GetAccounts()
+	accounts, err := postgres.GetAccounts()
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -524,11 +528,12 @@ func createAccount(w http.ResponseWriter, r *http.Request) {
 	var accountToInsert types.Account
 	json.NewDecoder(r.Body).Decode(&accountToInsert)
 	fmt.Println("received account: ", accountToInsert)
-	config, err := supabase.GetConfigByType("accounts")
+	config, err := postgres.GetConfigByType("accounts")
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
 	}
+	// TODO: Migrate InsertAccountIntoDatabase to postgres
 	account, err := supabase.InsertAccountIntoDatabase(accountToInsert)
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -560,7 +565,7 @@ func getInvestmentAccounts(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	accounts, err := supabase.GetInvestmentAccounts()
+	accounts, err := postgres.GetInvestmentAccounts()
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -585,11 +590,12 @@ func createInvestmentAccount(w http.ResponseWriter, r *http.Request) {
 
 	json.NewDecoder(r.Body).Decode(&accountToInsert)
 	fmt.Println("received account: ", accountToInsert)
-	config, err := supabase.GetConfigByType("investment_accounts")
+	config, err := postgres.GetConfigByType("investment_accounts")
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
 	}
+	// TODO: Migrate InsertInvestmentAccountIntoDatabase to postgres
 	accounts, err := supabase.InsertInvestmentAccountIntoDatabase(accountToInsert)
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -616,7 +622,7 @@ func getDebtors(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	debtors, err := supabase.GetDebtors()
+	debtors, err := postgres.GetDebtors()
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -635,7 +641,7 @@ func getDebtorsWithDebts(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	result, err := supabase.GetDebtorsWithDebts()
+	result, err := postgres.GetDebtorsWithDebts()
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -659,11 +665,12 @@ func createDebtor(w http.ResponseWriter, r *http.Request) {
 	var debtorToInsert types.Debtor
 	json.NewDecoder(r.Body).Decode(&debtorToInsert)
 	fmt.Println("received account: ", debtorToInsert)
-	config, err := supabase.GetConfigByType("debtors")
+	config, err := postgres.GetConfigByType("debtors")
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
 	}
+	// TODO: Migrate InsertDebtorIntoDatabase to postgres
 	debtors, err := supabase.InsertDebtorIntoDatabase(debtorToInsert)
 	if err != nil {
 		ServerErrorResponse(w, r)
