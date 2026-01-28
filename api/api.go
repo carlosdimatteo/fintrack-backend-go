@@ -10,7 +10,6 @@ import (
 
 	googleSS "github.com/carlosdimatteo/fintrack-backend-go/adapters/google"
 	"github.com/carlosdimatteo/fintrack-backend-go/adapters/postgres"
-	"github.com/carlosdimatteo/fintrack-backend-go/adapters/supabase"
 	types "github.com/carlosdimatteo/fintrack-backend-go/types"
 	"github.com/gorilla/mux"
 )
@@ -193,7 +192,7 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		// TODO: Migrate InsertBudgetsIntoDatabase to postgres
-		_, err = supabase.InsertBudgetsIntoDatabase(arrayOfBudgets)
+		_, err = postgres.InsertBudgetsIntoDatabase(arrayOfBudgets)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -230,7 +229,7 @@ func setConfig(w http.ResponseWriter, r *http.Request) {
 	var arrayOfConfig []types.Config
 	json.NewDecoder(r.Body).Decode(&arrayOfConfig)
 	// TODO: Migrate InsertConfigIntoDatabase to postgres
-	_, err := supabase.InsertConfigIntoDatabase(arrayOfConfig)
+	_, err := postgres.InsertConfigIntoDatabase(arrayOfConfig)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -534,7 +533,7 @@ func createAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// TODO: Migrate InsertAccountIntoDatabase to postgres
-	account, err := supabase.InsertAccountIntoDatabase(accountToInsert)
+	account, err := postgres.InsertAccountIntoDatabase(accountToInsert)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -596,7 +595,7 @@ func createInvestmentAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// TODO: Migrate InsertInvestmentAccountIntoDatabase to postgres
-	accounts, err := supabase.InsertInvestmentAccountIntoDatabase(accountToInsert)
+	accounts, err := postgres.InsertInvestmentAccountIntoDatabase(accountToInsert)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -671,7 +670,7 @@ func createDebtor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// TODO: Migrate InsertDebtorIntoDatabase to postgres
-	debtors, err := supabase.InsertDebtorIntoDatabase(debtorToInsert)
+	debtors, err := postgres.InsertDebtorIntoDatabase(debtorToInsert)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
