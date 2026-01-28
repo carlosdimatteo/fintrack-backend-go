@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -360,6 +361,202 @@ func GetInvestmentAccountSummary() ([]types.InvestmentAccountSummary, error) {
 	return results, nil
 }
 
+// ========== YEARLY GOALS ==========
+
+// GetYearlyGoals retrieves goals for a specific year
+func GetYearlyGoals(year int) (types.YearlyGoals, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.YearlyGoals{}, err
+	}
+
+	var goals types.YearlyGoals
+	err = pool.QueryRow(context.Background(),
+		`SELECT id, created_at, year, savings_goal, investment_goal, ideal_investment 
+		 FROM yearly_goals WHERE year = $1`,
+		year,
+	).Scan(&goals.Id, &goals.CreatedAt, &goals.Year, &goals.SavingsGoal,
+		&goals.InvestmentGoal, &goals.IdealInvestment)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return types.YearlyGoals{Year: year}, nil // Return empty goals for year
+		}
+		return types.YearlyGoals{}, fmt.Errorf("error querying goals: %w", err)
+	}
+
+	return goals, nil
+}
+
+// UpsertYearlyGoals creates or updates goals for a year
+func UpsertYearlyGoals(goals types.YearlyGoals) (types.YearlyGoals, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.YearlyGoals{}, err
+	}
+
+	var result types.YearlyGoals
+	err = pool.QueryRow(context.Background(),
+		`INSERT INTO yearly_goals (year, savings_goal, investment_goal, ideal_investment)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (year) DO UPDATE SET
+		   savings_goal = EXCLUDED.savings_goal,
+		   investment_goal = EXCLUDED.investment_goal,
+		   ideal_investment = EXCLUDED.ideal_investment
+		 RETURNING id, created_at, year, savings_goal, investment_goal, ideal_investment`,
+		goals.Year, goals.SavingsGoal, goals.InvestmentGoal, goals.IdealInvestment,
+	).Scan(&result.Id, &result.CreatedAt, &result.Year, &result.SavingsGoal,
+		&result.InvestmentGoal, &result.IdealInvestment)
+
+	if err != nil {
+		return types.YearlyGoals{}, fmt.Errorf("error upserting goals: %w", err)
+	}
+
+	return result, nil
+}
+
+// ========== NET WORTH SNAPSHOTS ==========
+
+// UpsertNetWorthSnapshot creates or updates a snapshot for a year/month
+func UpsertNetWorthSnapshot(snapshot types.NetWorthSnapshot) (types.NetWorthSnapshot, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.NetWorthSnapshot{}, err
+	}
+
+	var result types.NetWorthSnapshot
+	err = pool.QueryRow(context.Background(),
+		`INSERT INTO net_worth_snapshots (
+			date, year, month, total_fiat_balance,
+			crypto_balance, crypto_capital, broker_balance, broker_capital,
+			total_investment_balance, total_investment_capital,
+			total_net_worth, total_pnl, fiat_percent, crypto_percent, broker_percent
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (year, month) DO UPDATE SET
+			date = EXCLUDED.date,
+			total_fiat_balance = EXCLUDED.total_fiat_balance,
+			crypto_balance = EXCLUDED.crypto_balance,
+			crypto_capital = EXCLUDED.crypto_capital,
+			broker_balance = EXCLUDED.broker_balance,
+			broker_capital = EXCLUDED.broker_capital,
+			total_investment_balance = EXCLUDED.total_investment_balance,
+			total_investment_capital = EXCLUDED.total_investment_capital,
+			total_net_worth = EXCLUDED.total_net_worth,
+			total_pnl = EXCLUDED.total_pnl,
+			fiat_percent = EXCLUDED.fiat_percent,
+			crypto_percent = EXCLUDED.crypto_percent,
+			broker_percent = EXCLUDED.broker_percent
+		RETURNING id, created_at, date, year, month, total_fiat_balance,
+			crypto_balance, crypto_capital, broker_balance, broker_capital,
+			total_investment_balance, total_investment_capital,
+			total_net_worth, total_pnl, fiat_percent, crypto_percent, broker_percent`,
+		snapshot.Date, snapshot.Year, snapshot.Month, snapshot.TotalFiatBalance,
+		snapshot.CryptoBalance, snapshot.CryptoCapital, snapshot.BrokerBalance, snapshot.BrokerCapital,
+		snapshot.TotalInvestmentBalance, snapshot.TotalInvestmentCapital,
+		snapshot.TotalNetWorth, snapshot.TotalPnL, snapshot.FiatPercent, snapshot.CryptoPercent, snapshot.BrokerPercent,
+	).Scan(&result.Id, &result.CreatedAt, &result.Date, &result.Year, &result.Month,
+		&result.TotalFiatBalance, &result.CryptoBalance, &result.CryptoCapital,
+		&result.BrokerBalance, &result.BrokerCapital, &result.TotalInvestmentBalance,
+		&result.TotalInvestmentCapital, &result.TotalNetWorth, &result.TotalPnL,
+		&result.FiatPercent, &result.CryptoPercent, &result.BrokerPercent)
+
+	if err != nil {
+		return types.NetWorthSnapshot{}, fmt.Errorf("error upserting snapshot: %w", err)
+	}
+
+	return result, nil
+}
+
+// GetNetWorthHistory retrieves all snapshots ordered by date
+func GetNetWorthHistory() ([]types.NetWorthSnapshot, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, created_at, date, year, month, total_fiat_balance,
+			crypto_balance, crypto_capital, broker_balance, broker_capital,
+			total_investment_balance, total_investment_capital,
+			total_net_worth, total_pnl, fiat_percent, crypto_percent, broker_percent
+		 FROM net_worth_snapshots ORDER BY year, month`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error querying snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.NetWorthSnapshot
+	for rows.Next() {
+		var s types.NetWorthSnapshot
+		if err := rows.Scan(&s.Id, &s.CreatedAt, &s.Date, &s.Year, &s.Month,
+			&s.TotalFiatBalance, &s.CryptoBalance, &s.CryptoCapital,
+			&s.BrokerBalance, &s.BrokerCapital, &s.TotalInvestmentBalance,
+			&s.TotalInvestmentCapital, &s.TotalNetWorth, &s.TotalPnL,
+			&s.FiatPercent, &s.CryptoPercent, &s.BrokerPercent); err != nil {
+			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, s)
+	}
+
+	return results, nil
+}
+
+// CalculateNetWorthSnapshot calculates current net worth from accounts
+func CalculateNetWorthSnapshot(year int, month int) (types.NetWorthSnapshot, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.NetWorthSnapshot{}, err
+	}
+
+	snapshot := types.NetWorthSnapshot{
+		Date:  time.Now(),
+		Year:  year,
+		Month: month,
+	}
+
+	// Get fiat accounts total
+	err = pool.QueryRow(context.Background(),
+		`SELECT COALESCE(SUM(balance), 0) FROM accounts`,
+	).Scan(&snapshot.TotalFiatBalance)
+	if err != nil {
+		return types.NetWorthSnapshot{}, fmt.Errorf("error getting fiat balance: %w", err)
+	}
+
+	// Get crypto accounts (type = 'Crypto')
+	err = pool.QueryRow(context.Background(),
+		`SELECT COALESCE(SUM(balance), 0), COALESCE(SUM(capital), 0) 
+		 FROM investment_accounts WHERE type = 'Crypto'`,
+	).Scan(&snapshot.CryptoBalance, &snapshot.CryptoCapital)
+	if err != nil {
+		return types.NetWorthSnapshot{}, fmt.Errorf("error getting crypto: %w", err)
+	}
+
+	// Get broker accounts (type = 'Broker')
+	err = pool.QueryRow(context.Background(),
+		`SELECT COALESCE(SUM(balance), 0), COALESCE(SUM(capital), 0) 
+		 FROM investment_accounts WHERE type = 'Broker'`,
+	).Scan(&snapshot.BrokerBalance, &snapshot.BrokerCapital)
+	if err != nil {
+		return types.NetWorthSnapshot{}, fmt.Errorf("error getting broker: %w", err)
+	}
+
+	// Calculate totals
+	snapshot.TotalInvestmentBalance = snapshot.CryptoBalance + snapshot.BrokerBalance
+	snapshot.TotalInvestmentCapital = snapshot.CryptoCapital + snapshot.BrokerCapital
+	snapshot.TotalNetWorth = snapshot.TotalFiatBalance + snapshot.TotalInvestmentBalance
+	snapshot.TotalPnL = snapshot.TotalInvestmentBalance - snapshot.TotalInvestmentCapital
+
+	// Calculate percentages
+	if snapshot.TotalNetWorth > 0 {
+		snapshot.FiatPercent = (snapshot.TotalFiatBalance / snapshot.TotalNetWorth) * 100
+		snapshot.CryptoPercent = (snapshot.CryptoBalance / snapshot.TotalNetWorth) * 100
+		snapshot.BrokerPercent = (snapshot.BrokerBalance / snapshot.TotalNetWorth) * 100
+	}
+
+	return snapshot, nil
+}
+
 // ========== ACCOUNTS ==========
 
 // GetAccounts retrieves all fiat accounts
@@ -456,4 +653,58 @@ func UpdateInvestmentAccountBalance(accountId int32, balance float64) error {
 	}
 
 	return nil
+}
+
+// UpdateAccountBalances updates balances for multiple accounts (for accounting)
+func UpdateAccountBalances(accounts []types.Account) ([]types.Account, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	var updated []types.Account
+
+	for _, account := range accounts {
+		var result types.Account
+		err := pool.QueryRow(ctx,
+			`UPDATE accounts SET balance = $1 WHERE id = $2
+			 RETURNING id, name, COALESCE(description, ''), COALESCE(type, ''), COALESCE(currency, 'USD'), balance`,
+			account.Balance, account.Id,
+		).Scan(&result.Id, &result.Name, &result.Description, &result.Type, &result.Currency, &result.Balance)
+
+		if err != nil {
+			return nil, fmt.Errorf("error updating account %d: %w", account.Id, err)
+		}
+		updated = append(updated, result)
+	}
+
+	return updated, nil
+}
+
+// UpdateInvestmentAccountBalances updates balances for multiple investment accounts (for accounting)
+func UpdateInvestmentAccountBalances(accounts []types.InvestmentAccount) ([]types.InvestmentAccount, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	var updated []types.InvestmentAccount
+
+	for _, account := range accounts {
+		var result types.InvestmentAccount
+		err := pool.QueryRow(ctx,
+			`UPDATE investment_accounts SET balance = $1 WHERE id = $2
+			 RETURNING id, name, COALESCE(description, ''), COALESCE(type, ''), COALESCE(currency, 'USD'), balance, COALESCE(capital, 0)`,
+			account.Balance, account.Id,
+		).Scan(&result.Id, &result.Name, &result.Description, &result.Type, &result.Currency, &result.Balance, &result.Capital)
+
+		if err != nil {
+			return nil, fmt.Errorf("error updating investment account %d: %w", account.Id, err)
+		}
+		updated = append(updated, result)
+	}
+
+	return updated, nil
 }
