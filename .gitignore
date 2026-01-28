@@ -33,3 +33,4 @@ credentials.json
 /tmp
 app.yaml
 .gcloudignore
+supabase/
