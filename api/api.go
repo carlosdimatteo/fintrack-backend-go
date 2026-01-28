@@ -31,7 +31,7 @@ func getCategories(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	categories, err := supabase.GetCategories()
+	categories, err := postgres.GetCategories()
 	res := map[string][]types.Category{
 		"categories": categories,
 	}
@@ -58,32 +58,36 @@ func submitExpenseRow(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("submitting row :  description:", expense.Description, " amount:", expense.OriginalAmount, " expense: ", expense.Expense)
 	fmt.Println("expense : ", expense.Expense)
 	expense.Date = time.Now().Format(time.DateTime)
-	config, err := supabase.GetConfigByType("expenses")
+
+	// 1. Get config (using postgres)
+	config, err := postgres.GetConfigByType("expenses")
 	if err != nil {
 		fmt.Println("error getting config: ", err)
 		ServerErrorResponse(w, r)
 		return
 	}
+
+	// 2. Append to sheet
 	_, err = googleSS.SubmitExpenseRow(expense, config)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
 	}
 
+	// 3. Insert into database (synchronous, fail on error)
+	_, err = postgres.InsertExpense(expense)
+	if err != nil {
+		log.Printf("Error inserting expense to database: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
 	res := types.Response{
 		Success: true,
-		Message: "Row submitted",
+		Message: "Expense submitted",
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
-
-	go func() {
-		_, err = supabase.InsertExpenseIntoDatabase(expense)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-	}()
 }
 
 func getExpenses(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +123,7 @@ func getExpenses(w http.ResponseWriter, r *http.Request) {
 		offset = parsedOffset
 	}
 
-	expenses, count, err := supabase.GetExpenses(limit, offset)
+	expenses, count, err := postgres.GetExpenses(limit, offset)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -280,11 +284,12 @@ func submitInvestment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Insert investment and update capital (using postgres, synchronous)
+	// 3. Insert investment and update capital (using postgres, fail on error)
 	_, err = postgres.InsertInvestment(investment)
 	if err != nil {
 		log.Printf("Error inserting investment to database: %v", err)
-		// Don't fail - sheet was updated
+		ServerErrorResponse(w, r)
+		return
 	}
 
 	// 4. Update capital cell in sheet (async)
@@ -389,11 +394,12 @@ func submitIncome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Insert income into database (using postgres now)
+	// 3. Insert income into database (using postgres now, fail on error)
 	_, err = postgres.InsertIncome(income)
 	if err != nil {
 		log.Printf("Error inserting income to database: %v", err)
-		// Don't fail the request - sheet was updated, just log the error
+		ServerErrorResponse(w, r)
+		return
 	}
 
 	// 4. Update monthly income sum in sheet (async)
@@ -691,21 +697,22 @@ func setAccountingForCurrentMonth(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&accountToInsert)
 
 	if len(accountToInsert.Accounts) > 0 {
-		accounts, err := supabase.UpdateAccountBalances(accountToInsert.Accounts)
+		accounts, err := postgres.UpdateAccountBalances(accountToInsert.Accounts)
 		if err != nil {
+			log.Printf("Error updating account balances: %v", err)
 			ServerErrorResponse(w, r)
 			return
 		}
-		accountConfig, err := supabase.GetConfigByType(types.ConfigType["accounting_accounts"])
-
+		accountConfig, err := postgres.GetConfigByType(types.ConfigType["accounting_accounts"])
 		if err != nil {
+			log.Printf("Error getting accounting_accounts config: %v", err)
 			ServerErrorResponse(w, r)
 			return
 		}
 
 		_, err = googleSS.UpdateAccountBalances(accounts, accountConfig)
-
 		if err != nil {
+			log.Printf("Error updating sheet account balances: %v", err)
 			ServerErrorResponse(w, r)
 			return
 		}
@@ -714,21 +721,22 @@ func setAccountingForCurrentMonth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(accountToInsert.InvestmentAccounts) > 0 {
-		investmentAccounts, err := supabase.UpdateInvestmentAccountBalances(accountToInsert.InvestmentAccounts)
+		investmentAccounts, err := postgres.UpdateInvestmentAccountBalances(accountToInsert.InvestmentAccounts)
 		if err != nil {
+			log.Printf("Error updating investment account balances: %v", err)
 			ServerErrorResponse(w, r)
 			return
 		}
-		investmentAccountConfig, err := supabase.GetConfigByType(types.ConfigType["accounting_investment_accounts"])
-
+		investmentAccountConfig, err := postgres.GetConfigByType(types.ConfigType["accounting_investment_accounts"])
 		if err != nil {
+			log.Printf("Error getting accounting_investment_accounts config: %v", err)
 			ServerErrorResponse(w, r)
 			return
 		}
 
 		_, err = googleSS.UpdateInvestmentAccountBalances(investmentAccounts, investmentAccountConfig)
-
 		if err != nil {
+			log.Printf("Error updating sheet investment balances: %v", err)
 			ServerErrorResponse(w, r)
 			return
 		}
@@ -736,9 +744,125 @@ func setAccountingForCurrentMonth(w http.ResponseWriter, r *http.Request) {
 		res.InvestmentAccounts = investmentAccounts
 	}
 
+	// Create net worth snapshot after updating balances
+	go func() {
+		now := time.Now()
+		snapshot, err := postgres.CalculateNetWorthSnapshot(now.Year(), int(now.Month()))
+		if err != nil {
+			log.Printf("Error calculating net worth snapshot: %v", err)
+			return
+		}
+
+		_, err = postgres.UpsertNetWorthSnapshot(snapshot)
+		if err != nil {
+			log.Printf("Error saving net worth snapshot: %v", err)
+			return
+		}
+
+		log.Printf("Created net worth snapshot for %d/%d: Total $%.2f", now.Month(), now.Year(), snapshot.TotalNetWorth)
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 
+}
+
+// ========== GOALS ENDPOINTS ==========
+
+func getGoals(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	// Get year from query param, default to current year
+	yearStr := r.URL.Query().Get("year")
+	year := time.Now().Year()
+	if yearStr != "" {
+		if parsed, err := strconv.Atoi(yearStr); err == nil {
+			year = parsed
+		}
+	}
+
+	goals, err := postgres.GetYearlyGoals(year)
+	if err != nil {
+		log.Printf("Error getting goals: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(goals)
+}
+
+func setGoals(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	var goals types.YearlyGoals
+	if err := json.NewDecoder(r.Body).Decode(&goals); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
+
+	if goals.Year == 0 {
+		goals.Year = time.Now().Year()
+	}
+
+	result, err := postgres.UpsertYearlyGoals(goals)
+	if err != nil {
+		log.Printf("Error saving goals: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// ========== NET WORTH ENDPOINTS ==========
+
+func getNetWorthHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	history, err := postgres.GetNetWorthHistory()
+	if err != nil {
+		log.Printf("Error getting net worth history: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
+}
+
+// ========== INVESTMENT ACCOUNT SUMMARY ==========
+
+func getInvestmentAccountsSummary(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	summary, err := postgres.GetInvestmentAccountSummary()
+	if err != nil {
+		log.Printf("Error getting investment summary: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(summary)
 }
 
 func LoadRoutes(muxRouter *mux.Router) {
@@ -765,6 +889,14 @@ func LoadRoutes(muxRouter *mux.Router) {
 	api.HandleFunc("/debtors", createDebtor).Methods("POST", "OPTIONS")
 	api.HandleFunc("/debtors/debt", getDebtorsWithDebts).Methods("GET")
 	api.HandleFunc("/accounting", setAccountingForCurrentMonth).Methods("POST", "OPTIONS")
+
+	// Phase 4: Goals & Net Worth
+	api.HandleFunc("/goals", getGoals).Methods("GET")
+	api.HandleFunc("/goals", setGoals).Methods("POST", "OPTIONS")
+	api.HandleFunc("/net-worth/history", getNetWorthHistory).Methods("GET")
+
+	// Phase 5: Investment Account Summary
+	api.HandleFunc("/investment-accounts/summary", getInvestmentAccountsSummary).Methods("GET")
 }
 
 func NotFoundResponse(w http.ResponseWriter, r *http.Request) {
