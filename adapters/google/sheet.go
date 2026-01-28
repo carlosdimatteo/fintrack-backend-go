@@ -332,3 +332,68 @@ func SubmitDebtor(debtor types.Debtor, config types.Config) (*sheets.Spreadsheet
 	}
 	return nil, nil
 }
+
+// UpdateSheetCell updates a single cell with a value (uses Update, not Append)
+// sheetRange should be in format "SheetName!A1" (e.g., "2026!D3")
+func UpdateSheetCell(sheetRange string, value interface{}) error {
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
+	sheetValueService, err := getSheetService()
+	if err != nil {
+		return err
+	}
+
+	dataToWrite := sheets.ValueRange{
+		Values: [][]interface{}{{value}},
+	}
+
+	_, err = sheetValueService.Update(
+		spreadsheetID,
+		sheetRange,
+		&dataToWrite,
+	).ValueInputOption("USER_ENTERED").Do()
+
+	if err != nil {
+		log.Printf("Unable to update cell %s: %v", sheetRange, err)
+		return err
+	}
+
+	log.Printf("Updated cell %s with value: %v", sheetRange, value)
+	return nil
+}
+
+// CalculateMonthlyCellRange calculates the cell range for a given month
+// baseRange is the config range (e.g., "!D3" for January)
+// month is 1-12
+// Returns full range like "2026!D5" for March (month=3)
+func CalculateMonthlyCellRange(sheet string, baseRange string, month int) string {
+	// baseRange format: "!D3" where 3 is January (month 1)
+	// So row = baseRow + (month - 1)
+	// For D3 as January: D3=Jan, D4=Feb, D5=Mar, etc.
+
+	// Extract column letter and base row from baseRange
+	// baseRange is like "!D3"
+	if len(baseRange) < 3 {
+		return sheet + baseRange
+	}
+
+	// Find where the number starts
+	col := ""
+	rowStr := ""
+	for i, c := range baseRange[1:] { // skip the "!"
+		if c >= '0' && c <= '9' {
+			col = baseRange[1 : i+1]
+			rowStr = baseRange[i+1:]
+			break
+		}
+	}
+
+	if col == "" || rowStr == "" {
+		return sheet + baseRange
+	}
+
+	baseRow := 0
+	fmt.Sscanf(rowStr, "%d", &baseRow)
+	targetRow := baseRow + (month - 1)
+
+	return fmt.Sprintf("%s!%s%d", sheet, col, targetRow)
+}
