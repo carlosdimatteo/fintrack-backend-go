@@ -9,6 +9,7 @@ import (
 	"time"
 
 	googleSS "github.com/carlosdimatteo/fintrack-backend-go/adapters/google"
+	"github.com/carlosdimatteo/fintrack-backend-go/adapters/postgres"
 	"github.com/carlosdimatteo/fintrack-backend-go/adapters/supabase"
 	types "github.com/carlosdimatteo/fintrack-backend-go/types"
 	"github.com/gorilla/mux"
@@ -250,35 +251,71 @@ func submitInvestment(w http.ResponseWriter, r *http.Request) {
 	var investment types.Investment
 	json.NewDecoder(r.Body).Decode(&investment)
 	fmt.Println("received investment: ", investment)
-	fmt.Println("submitting row :  description:", investment.Description, " amount:", investment.Amount, " account: ", investment.AccountName)
-	fmt.Println("amount : ", investment.Amount)
+	fmt.Println("submitting row :  description:", investment.Description, " amount:", investment.Amount, " account: ", investment.AccountName, " type: ", investment.Type)
+
+	// Validate type
+	if investment.Type != "deposit" && investment.Type != "withdrawal" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{
+			Success: false,
+			Message: "Invalid type: must be 'deposit' or 'withdrawal'",
+		})
+		return
+	}
+
 	investment.Date = time.Now().Format(time.DateTime)
-	config, err := supabase.GetConfigByType("investments")
+
+	// 1. Get config for investment row append
+	config, err := postgres.GetConfigByType("investments")
 	if err != nil {
 		fmt.Println("error getting config: ", err)
 		ServerErrorResponse(w, r)
 		return
 	}
+
+	// 2. Append investment row to sheet
 	_, err = googleSS.SubmitInvestment(investment, config)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
 	}
 
+	// 3. Insert investment and update capital (using postgres, synchronous)
+	_, err = postgres.InsertInvestment(investment)
+	if err != nil {
+		log.Printf("Error inserting investment to database: %v", err)
+		// Don't fail - sheet was updated
+	}
+
+	// 4. Update capital cell in sheet (async)
+	go func() {
+		// Get updated capital
+		capital, err := postgres.GetInvestmentAccountCapital(investment.AccountId)
+		if err != nil {
+			log.Printf("Error getting account capital: %v", err)
+			return
+		}
+
+		// Investment account row in Fintrack Config: L{id+2}
+		// id=1 -> L3, id=2 -> L4, id=3 -> L5
+		row := int(investment.AccountId) + 2
+		cellRange := fmt.Sprintf("Fintrack Config!L%d", row)
+
+		err = googleSS.UpdateSheetCell(cellRange, capital)
+		if err != nil {
+			log.Printf("Error updating capital cell: %v", err)
+			return
+		}
+
+		log.Printf("Updated capital for account %d: %.2f in cell %s", investment.AccountId, capital, cellRange)
+	}()
+
 	res := types.Response{
 		Success: true,
-		Message: "Row submitted",
+		Message: "Investment submitted",
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
-
-	go func() {
-		_, err = supabase.InsertInvestmentIntoDatabase(investment)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-	}()
 }
 func submitDebt(w http.ResponseWriter, r *http.Request) {
 	// Allow CORS here By * or specific origin
@@ -336,17 +373,61 @@ func submitIncome(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("submitting row :  description:", income.Description, " amount:", income.Amount, " account: ", income.AccountName)
 	fmt.Println("amount : ", income.Amount)
 	income.Date = time.Now().Format(time.DateTime)
-	config, err := supabase.GetConfigByType("income")
+
+	// 1. Get config for income row append (using postgres now)
+	config, err := postgres.GetConfigByType("income")
 	if err != nil {
 		fmt.Println("error getting config: ", err)
 		ServerErrorResponse(w, r)
 		return
 	}
+
+	// 2. Append income row to sheet
 	_, err = googleSS.SubmitIncome(income, config)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
 	}
+
+	// 3. Insert income into database (using postgres now)
+	_, err = postgres.InsertIncome(income)
+	if err != nil {
+		log.Printf("Error inserting income to database: %v", err)
+		// Don't fail the request - sheet was updated, just log the error
+	}
+
+	// 4. Update monthly income sum in sheet (async)
+	go func() {
+		now := time.Now()
+		year := now.Year()
+		month := int(now.Month())
+
+		// Get monthly config (using postgres)
+		monthlyConfig, err := postgres.GetConfigByType("income_monthly")
+		if err != nil {
+			log.Printf("Error getting income_monthly config: %v", err)
+			return
+		}
+
+		// Get sum for this month (using postgres)
+		sum, err := postgres.GetMonthlyIncomeSum(year, month)
+		if err != nil {
+			log.Printf("Error getting monthly income sum: %v", err)
+			return
+		}
+
+		// Calculate the cell for this month
+		cellRange := googleSS.CalculateMonthlyCellRange(monthlyConfig.Sheet, monthlyConfig.A1Range, month)
+
+		// Update the cell
+		err = googleSS.UpdateSheetCell(cellRange, sum)
+		if err != nil {
+			log.Printf("Error updating monthly income cell: %v", err)
+			return
+		}
+
+		log.Printf("Updated monthly income for %d/%d: %.2f in cell %s", month, year, sum, cellRange)
+	}()
 
 	res := types.Response{
 		Success: true,
@@ -354,14 +435,6 @@ func submitIncome(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
-
-	go func() {
-		_, err = supabase.InsertIncomeIntoDatabase(income)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-	}()
 }
 
 func getIncomes(w http.ResponseWriter, r *http.Request) {
