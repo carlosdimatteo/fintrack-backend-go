@@ -708,3 +708,185 @@ func UpdateInvestmentAccountBalances(accounts []types.InvestmentAccount) ([]type
 
 	return updated, nil
 }
+
+// ========== DEBTS ==========
+
+// InsertDebt inserts a debt record
+func InsertDebt(debt types.Debt) (types.Debt, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.Debt{}, err
+	}
+
+	var result types.Debt
+	err = pool.QueryRow(context.Background(),
+		`INSERT INTO debts (description, amount, debtor_id, debtor_name, date, original_amount, currency, outbound, account_id, expense_id, income_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 RETURNING id, description, amount, debtor_id, debtor_name, date, created_at, original_amount, currency, outbound`,
+		debt.Description, debt.Amount, debt.DebtorId, debt.DebtorName, debt.Date,
+		debt.OriginalAmount, debt.Currency, debt.Outbound, debt.AccountId, debt.ExpenseId, debt.IncomeId,
+	).Scan(&result.Id, &result.Description, &result.Amount, &result.DebtorId, &result.DebtorName,
+		&result.Date, &result.CreatedAt, &result.OriginalAmount, &result.Currency, &result.Outbound)
+
+	if err != nil {
+		return types.Debt{}, fmt.Errorf("error inserting debt: %w", err)
+	}
+
+	return result, nil
+}
+
+// ========== EXPENSES (READ) ==========
+
+// GetExpenses retrieves expenses with pagination
+func GetExpenses(limit int, offset int) ([]types.Expense, int, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get total count
+	var count int
+	err = pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM expenses`,
+	).Scan(&count)
+	if err != nil {
+		return nil, 0, fmt.Errorf("error counting expenses: %w", err)
+	}
+
+	// Get paginated results
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, date, category, category_id, expense, description, method, "originalAmount", account_id, account_type 
+		 FROM expenses ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("error querying expenses: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.Expense
+	for rows.Next() {
+		var e types.Expense
+		if err := rows.Scan(&e.Id, &e.Date, &e.Category, &e.CategoryId, &e.Expense,
+			&e.Description, &e.Method, &e.OriginalAmount, &e.AccountId, &e.AccountType); err != nil {
+			return nil, 0, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, e)
+	}
+
+	return results, count, nil
+}
+
+// ========== BUDGETS ==========
+
+// GetBudgets retrieves budget by category from the view
+func GetBudgets() ([]types.BudgetByCategory, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := pool.Query(context.Background(),
+		`SELECT amount, spent, category_name, category_id FROM budget_by_category_current_month ORDER BY category_name`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error querying budgets: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.BudgetByCategory
+	for rows.Next() {
+		var b types.BudgetByCategory
+		if err := rows.Scan(&b.Amount, &b.Spent, &b.CategoryName, &b.CategoryId); err != nil {
+			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, b)
+	}
+
+	return results, nil
+}
+
+// ========== DEBTORS ==========
+
+// GetDebtors retrieves all debtors
+func GetDebtors() ([]types.Debtor, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, name, COALESCE(first_name, ''), COALESCE(last_name, ''), COALESCE(description, '') 
+		 FROM debtors ORDER BY name`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error querying debtors: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.Debtor
+	for rows.Next() {
+		var d types.Debtor
+		if err := rows.Scan(&d.Id, &d.Name, &d.FirstName, &d.LastName, &d.Description); err != nil {
+			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, d)
+	}
+
+	return results, nil
+}
+
+// GetDebtorsWithDebts retrieves debt summary by debtor
+func GetDebtorsWithDebts() ([]types.DebtByDebtor, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := pool.Query(context.Background(),
+		`SELECT debtor_id, debtor_name, total_lent, total_received, net_owed, transaction_count 
+		 FROM debt_by_debtor`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error querying debt_by_debtor: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.DebtByDebtor
+	for rows.Next() {
+		var d types.DebtByDebtor
+		if err := rows.Scan(&d.DebtorId, &d.DebtorName, &d.TotalLent, &d.TotalReceived, &d.NetOwed, &d.TransactionCount); err != nil {
+			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, d)
+	}
+
+	return results, nil
+}
+
+// GetConfig retrieves all config entries
+func GetConfig() ([]types.Config, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := pool.Query(context.Background(),
+		`SELECT type, sheet, range FROM config`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error querying config: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.Config
+	for rows.Next() {
+		var c types.Config
+		if err := rows.Scan(&c.Type, &c.Sheet, &c.A1Range); err != nil {
+			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, c)
+	}
+
+	return results, nil
+}
