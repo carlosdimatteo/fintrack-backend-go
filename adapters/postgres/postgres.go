@@ -1349,7 +1349,7 @@ func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
 		// Build category breakdown
 		for _, cat := range categories {
 			spent := spendingByCategory[cat.CategoryId]
-			
+
 			bhc := types.BudgetHistoryCategory{
 				CategoryId:   cat.CategoryId,
 				CategoryName: cat.CategoryName,
@@ -1404,11 +1404,11 @@ func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
 		yearlyBudget := cat.Budget * 12
 
 		yhc := types.BudgetHistoryYearlyCategory{
-			CategoryId:    cat.CategoryId,
-			CategoryName:  cat.CategoryName,
-			YearlyBudget:  yearlyBudget,
-			TotalSpent:    totalSpent,
-			Difference:    yearlyBudget - totalSpent,
+			CategoryId:   cat.CategoryId,
+			CategoryName: cat.CategoryName,
+			YearlyBudget: yearlyBudget,
+			TotalSpent:   totalSpent,
+			Difference:   yearlyBudget - totalSpent,
 		}
 
 		// Calculate percentages
@@ -1654,7 +1654,7 @@ func GetTransfers(limit int, offset int) ([]types.Transfer, int, error) {
 	for rows.Next() {
 		var t types.Transfer
 		if err := rows.Scan(&t.Id, &t.CreatedAt, &t.Date, &t.Description,
-			&t.SourceAccountId, &t.SourceAccountName, &t.SourceAmount, 
+			&t.SourceAccountId, &t.SourceAccountName, &t.SourceAmount,
 			&t.DestAccountId, &t.DestAccountName, &t.DestAmount, &t.ExchangeRate); err != nil {
 			return nil, 0, fmt.Errorf("error scanning row: %w", err)
 		}
@@ -1714,11 +1714,11 @@ func GetInvestmentAccountExpectedCapital() ([]types.InvestmentAccountExpectedCap
 			ia.starting_capital,
 			COALESCE((SELECT SUM(amount) FROM investments WHERE account_id = ia.id AND type = 'deposit'), 0) as total_deposits,
 			COALESCE((SELECT SUM(amount) FROM investments WHERE account_id = ia.id AND type = 'withdrawal'), 0) as total_withdrawals,
-			COALESCE((SELECT SUM(expense) FROM expenses WHERE account_id = ia.id AND account_type IN ('Investment', 'Crypto', 'Broker')), 0) as total_expenses,
+			COALESCE((SELECT SUM(expense) FROM expenses WHERE account_id = ia.id AND account_type = 'investment_account'), 0) as total_expenses,
 			ia.starting_capital 
 				+ COALESCE((SELECT SUM(amount) FROM investments WHERE account_id = ia.id AND type = 'deposit'), 0)
 				- COALESCE((SELECT SUM(amount) FROM investments WHERE account_id = ia.id AND type = 'withdrawal'), 0)
-				- COALESCE((SELECT SUM(expense) FROM expenses WHERE account_id = ia.id AND account_type IN ('Investment', 'Crypto', 'Broker')), 0) as expected_capital,
+				- COALESCE((SELECT SUM(expense) FROM expenses WHERE account_id = ia.id AND account_type = 'investment_account'), 0) as expected_capital,
 			ia.balance as real_balance
 		FROM investment_accounts ia`,
 	)
