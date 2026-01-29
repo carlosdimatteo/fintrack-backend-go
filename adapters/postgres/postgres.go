@@ -1245,3 +1245,135 @@ func GetAccountExpectedBalances() ([]types.AccountExpectedBalance, error) {
 
 	return results, nil
 }
+
+// ========== INSERT FUNCTIONS (migrated from supabase) ==========
+
+// InsertBudgetsIntoDatabase upserts budget records
+func InsertBudgetsIntoDatabase(budgets []types.Budget) ([]types.Budget, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	var results []types.Budget
+
+	for _, b := range budgets {
+		var result types.Budget
+		err := pool.QueryRow(ctx,
+			`INSERT INTO budgets (category_id, budget)
+			 VALUES ($1, $2)
+			 ON CONFLICT (category_id) DO UPDATE SET budget = EXCLUDED.budget
+			 RETURNING id, category_id, budget`,
+			b.CategoryId, b.Amount,
+		).Scan(&result.Id, &result.CategoryId, &result.Amount)
+
+		if err != nil {
+			return nil, fmt.Errorf("error upserting budget: %w", err)
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// InsertConfigIntoDatabase upserts config records
+func InsertConfigIntoDatabase(configs []types.Config) ([]types.Config, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	var results []types.Config
+
+	for _, c := range configs {
+		var result types.Config
+		err := pool.QueryRow(ctx,
+			`INSERT INTO config (type, sheet, range)
+			 VALUES ($1, $2, $3)
+			 ON CONFLICT (type) DO UPDATE SET sheet = EXCLUDED.sheet, range = EXCLUDED.range
+			 RETURNING type, sheet, range`,
+			c.Type, c.Sheet, c.A1Range,
+		).Scan(&result.Type, &result.Sheet, &result.A1Range)
+
+		if err != nil {
+			return nil, fmt.Errorf("error upserting config: %w", err)
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// InsertAccountIntoDatabase inserts a new account
+func InsertAccountIntoDatabase(account types.Account) (types.Account, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.Account{}, err
+	}
+
+	var result types.Account
+	err = pool.QueryRow(context.Background(),
+		`INSERT INTO accounts (name, description, type, currency, balance, starting_balance, starting_date)
+		 VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, NOW()))
+		 RETURNING id, name, COALESCE(description, ''), COALESCE(type, ''), COALESCE(currency, 'USD'), balance,
+			COALESCE(starting_balance, 0), COALESCE(starting_date, NOW())`,
+		account.Name, account.Description, account.Type, account.Currency, account.Balance,
+		account.StartingBalance, account.StartingDate,
+	).Scan(&result.Id, &result.Name, &result.Description, &result.Type, &result.Currency, &result.Balance,
+		&result.StartingBalance, &result.StartingDate)
+
+	if err != nil {
+		return types.Account{}, fmt.Errorf("error inserting account: %w", err)
+	}
+
+	return result, nil
+}
+
+// InsertInvestmentAccountIntoDatabase inserts a new investment account
+func InsertInvestmentAccountIntoDatabase(account types.InvestmentAccount) (types.InvestmentAccount, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.InvestmentAccount{}, err
+	}
+
+	var result types.InvestmentAccount
+	err = pool.QueryRow(context.Background(),
+		`INSERT INTO investment_accounts (name, description, type, currency, balance, capital, starting_capital, starting_date)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, NOW()))
+		 RETURNING id, name, COALESCE(description, ''), COALESCE(type, ''), COALESCE(currency, 'USD'), balance,
+			COALESCE(capital, 0), COALESCE(starting_capital, 0), COALESCE(starting_date, NOW())`,
+		account.Name, account.Description, account.Type, account.Currency, account.Balance,
+		account.Capital, account.StartingCapital, account.StartingDate,
+	).Scan(&result.Id, &result.Name, &result.Description, &result.Type, &result.Currency, &result.Balance,
+		&result.Capital, &result.StartingCapital, &result.StartingDate)
+
+	if err != nil {
+		return types.InvestmentAccount{}, fmt.Errorf("error inserting investment account: %w", err)
+	}
+
+	return result, nil
+}
+
+// InsertDebtorIntoDatabase inserts a new debtor
+func InsertDebtorIntoDatabase(debtor types.Debtor) (types.Debtor, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.Debtor{}, err
+	}
+
+	var result types.Debtor
+	err = pool.QueryRow(context.Background(),
+		`INSERT INTO debtors (name, first_name, last_name, description)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id, name, COALESCE(first_name, ''), COALESCE(last_name, ''), COALESCE(description, '')`,
+		debtor.Name, debtor.FirstName, debtor.LastName, debtor.Description,
+	).Scan(&result.Id, &result.Name, &result.FirstName, &result.LastName, &result.Description)
+
+	if err != nil {
+		return types.Debtor{}, fmt.Errorf("error inserting debtor: %w", err)
+	}
+
+	return result, nil
+}

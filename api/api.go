@@ -191,7 +191,6 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 
 	go func() {
-		// TODO: Migrate InsertBudgetsIntoDatabase to postgres
 		_, err = postgres.InsertBudgetsIntoDatabase(arrayOfBudgets)
 		if err != nil {
 			log.Fatal(err)
@@ -228,7 +227,6 @@ func setConfig(w http.ResponseWriter, r *http.Request) {
 
 	var arrayOfConfig []types.Config
 	json.NewDecoder(r.Body).Decode(&arrayOfConfig)
-	// TODO: Migrate InsertConfigIntoDatabase to postgres
 	_, err := postgres.InsertConfigIntoDatabase(arrayOfConfig)
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -532,7 +530,6 @@ func createAccount(w http.ResponseWriter, r *http.Request) {
 		ServerErrorResponse(w, r)
 		return
 	}
-	// TODO: Migrate InsertAccountIntoDatabase to postgres
 	account, err := postgres.InsertAccountIntoDatabase(accountToInsert)
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -594,13 +591,12 @@ func createInvestmentAccount(w http.ResponseWriter, r *http.Request) {
 		ServerErrorResponse(w, r)
 		return
 	}
-	// TODO: Migrate InsertInvestmentAccountIntoDatabase to postgres
-	accounts, err := postgres.InsertInvestmentAccountIntoDatabase(accountToInsert)
+	account, err := postgres.InsertInvestmentAccountIntoDatabase(accountToInsert)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
 	}
-	_, err = googleSS.SubmitInvestmentAccount(accounts[0], config)
+	_, err = googleSS.SubmitInvestmentAccount(account, config)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -669,13 +665,12 @@ func createDebtor(w http.ResponseWriter, r *http.Request) {
 		ServerErrorResponse(w, r)
 		return
 	}
-	// TODO: Migrate InsertDebtorIntoDatabase to postgres
-	debtors, err := postgres.InsertDebtorIntoDatabase(debtorToInsert)
+	debtor, err := postgres.InsertDebtorIntoDatabase(debtorToInsert)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
 	}
-	_, err = googleSS.SubmitDebtor(debtors[0], config)
+	_, err = googleSS.SubmitDebtor(debtor, config)
 	if err != nil {
 		ServerErrorResponse(w, r)
 		return
@@ -765,7 +760,7 @@ func setAccountingForCurrentMonth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("Created net worth snapshot for %d/%d: Total $%.2f", now.Month(), now.Year(), snapshot.TotalNetWorth)
+		log.Printf("Created net worth snapshot for %d/%d: Real $%.2f, Expected $%.2f, Discrepancy $%.2f", now.Month(), now.Year(), snapshot.TotalRealNetWorth, snapshot.ExpectedNetWorth, snapshot.TotalDiscrepancy)
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -870,6 +865,7 @@ func getInvestmentAccountsSummary(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(summary)
 }
+
 // ========== INCOME SUMMARY ==========
 
 func getIncomeSummary(w http.ResponseWriter, r *http.Request) {
