@@ -139,15 +139,17 @@ type MonthlyIncomeSummary struct {
 
 // Transfer represents a fiat-to-fiat money transfer (Phase 1B)
 type Transfer struct {
-	Id              int32     `json:"id,omitempty"`
-	CreatedAt       time.Time `json:"created_at,omitempty"`
-	Date            string    `json:"date"`
-	Description     string    `json:"description"`
-	SourceAccountId int32     `json:"source_account_id"`
-	SourceAmount    float64   `json:"source_amount"`
-	DestAccountId   int32     `json:"dest_account_id"`
-	DestAmount      float64   `json:"dest_amount"`
-	ExchangeRate    float64   `json:"exchange_rate,omitempty"` // dest_amount / source_amount
+	Id                int32     `json:"id,omitempty"`
+	CreatedAt         time.Time `json:"created_at,omitempty"`
+	Date              string    `json:"date"`
+	Description       string    `json:"description"`
+	SourceAccountId   int32     `json:"source_account_id"`
+	SourceAccountName string    `json:"source_account_name,omitempty"`
+	SourceAmount      float64   `json:"source_amount"`
+	DestAccountId     int32     `json:"dest_account_id"`
+	DestAccountName   string    `json:"dest_account_name,omitempty"`
+	DestAmount        float64   `json:"dest_amount"`
+	ExchangeRate      float64   `json:"exchange_rate,omitempty"` // dest_amount / source_amount
 }
 
 // AccountExpectedBalance from the view (Phase 1B)
@@ -179,6 +181,21 @@ type InvestmentAccountSummary struct {
 	StartingCapital float64 `json:"starting_capital"`
 	PnL             float64 `json:"pnl"`
 	PnLPercent      float64 `json:"pnl_percent"`
+}
+
+// InvestmentAccountExpectedCapital shows the breakdown of capital calculation
+type InvestmentAccountExpectedCapital struct {
+	Id              int32   `json:"id"`
+	Name            string  `json:"name"`
+	Type            string  `json:"type"`
+	Currency        string  `json:"currency"`
+	StartingCapital float64 `json:"starting_capital"`
+	TotalDeposits   float64 `json:"total_deposits"`
+	TotalWithdrawals float64 `json:"total_withdrawals"`
+	TotalExpenses   float64 `json:"total_expenses"`
+	ExpectedCapital float64 `json:"expected_capital"`
+	RealBalance     float64 `json:"real_balance"`
+	Discrepancy     float64 `json:"discrepancy"` // real_balance - expected_capital = PnL
 }
 
 // YearlyGoals represents annual financial goals (Phase 4)
