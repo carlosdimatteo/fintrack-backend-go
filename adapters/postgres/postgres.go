@@ -779,6 +779,70 @@ func InsertDebt(debt types.Debt) (types.Debt, error) {
 	return result, nil
 }
 
+// InsertExpenseWithDebt creates an expense and a linked debt in a single transaction
+// Use case: "I lent $100 to a friend" - creates expense (affects expected balance) + debt (tracks receivable)
+func InsertExpenseWithDebt(expense types.Expense, debt types.Debt) (types.Expense, types.Debt, error) {
+	// Validate expense amount
+	if expense.Expense <= 0 {
+		return types.Expense{}, types.Debt{}, fmt.Errorf("expense amount must be positive, got: %.2f", expense.Expense)
+	}
+
+	// Validate debt amount
+	if debt.Amount <= 0 {
+		return types.Expense{}, types.Debt{}, fmt.Errorf("debt amount must be positive, got: %.2f", debt.Amount)
+	}
+
+	pool, err := GetPool()
+	if err != nil {
+		return types.Expense{}, types.Debt{}, err
+	}
+
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return types.Expense{}, types.Debt{}, fmt.Errorf("error starting transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Insert expense
+	var expenseResult types.Expense
+	err = tx.QueryRow(ctx,
+		`INSERT INTO expenses (date, category, category_id, expense, description, method, "originalAmount", account_id, account_type)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 RETURNING id, date, category, category_id, expense, description, method, "originalAmount", account_id, account_type`,
+		expense.Date, expense.Category, expense.CategoryId, expense.Expense,
+		expense.Description, expense.Method, expense.OriginalAmount,
+		expense.AccountId, expense.AccountType,
+	).Scan(&expenseResult.Id, &expenseResult.Date, &expenseResult.Category, &expenseResult.CategoryId,
+		&expenseResult.Expense, &expenseResult.Description, &expenseResult.Method, &expenseResult.OriginalAmount,
+		&expenseResult.AccountId, &expenseResult.AccountType)
+	if err != nil {
+		return types.Expense{}, types.Debt{}, fmt.Errorf("error inserting expense: %w", err)
+	}
+
+	// Insert debt with expense_id reference
+	debt.ExpenseId = &expenseResult.Id
+	var debtResult types.Debt
+	err = tx.QueryRow(ctx,
+		`INSERT INTO debts (description, amount, debtor_id, debtor_name, date, original_amount, currency, outbound, account_id, expense_id, income_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 RETURNING id, description, amount, debtor_id, debtor_name, date, created_at, original_amount, currency, outbound`,
+		debt.Description, debt.Amount, debt.DebtorId, debt.DebtorName, debt.Date,
+		debt.OriginalAmount, debt.Currency, debt.Outbound, debt.AccountId, debt.ExpenseId, debt.IncomeId,
+	).Scan(&debtResult.Id, &debtResult.Description, &debtResult.Amount, &debtResult.DebtorId, &debtResult.DebtorName,
+		&debtResult.Date, &debtResult.CreatedAt, &debtResult.OriginalAmount, &debtResult.Currency, &debtResult.Outbound)
+	if err != nil {
+		return types.Expense{}, types.Debt{}, fmt.Errorf("error inserting debt: %w", err)
+	}
+	debtResult.ExpenseId = debt.ExpenseId
+
+	if err := tx.Commit(ctx); err != nil {
+		return types.Expense{}, types.Debt{}, fmt.Errorf("error committing transaction: %w", err)
+	}
+
+	return expenseResult, debtResult, nil
+}
+
 // GetDebts retrieves debts with optional filters
 func GetDebts(limit int, offset int, debtorId *int32) ([]types.Debt, int, error) {
 	pool, err := GetPool()

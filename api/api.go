@@ -1157,6 +1157,106 @@ type RepaymentRequest struct {
 	Currency    string  `json:"currency"`
 }
 
+// ExpenseDebtRequest is for creating an expense that also creates a linked debt
+// Use case: "I lent $100 to John from my BOFA account"
+type ExpenseDebtRequest struct {
+	// Expense fields
+	Date           string  `json:"date"`
+	Category       string  `json:"category"`
+	CategoryId     int32   `json:"category_id"`
+	Amount         float64 `json:"amount"` // The expense amount (money that left your account)
+	Description    string  `json:"description"`
+	Method         string  `json:"method"`
+	OriginalAmount float64 `json:"original_amount"`
+	AccountId      int32   `json:"account_id"`
+	AccountType    string  `json:"account_type"`
+	// Debt fields
+	DebtorId       int32   `json:"debtor_id"`
+	DebtorName     string  `json:"debtor_name"`
+	DebtAmount     float64 `json:"debt_amount"` // How much they owe (can be same as amount or partial)
+	Currency       string  `json:"currency"`
+}
+
+func submitExpenseWithDebt(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	var req ExpenseDebtRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
+
+	// Default date to now if not provided
+	date := req.Date
+	if date == "" {
+		date = time.Now().Format(time.DateTime)
+	}
+
+	// Default debt amount to expense amount if not specified
+	debtAmount := req.DebtAmount
+	if debtAmount == 0 {
+		debtAmount = req.Amount
+	}
+
+	// Create expense record
+	expense := types.Expense{
+		Date:           date,
+		Category:       req.Category,
+		CategoryId:     req.CategoryId,
+		Expense:        req.Amount,
+		Description:    req.Description,
+		Method:         req.Method,
+		OriginalAmount: req.OriginalAmount,
+		AccountId:      req.AccountId,
+		AccountType:    req.AccountType,
+	}
+
+	// Create debt record (outbound = they owe you)
+	accountId := req.AccountId
+	debt := types.Debt{
+		Description:    req.Description,
+		Amount:         debtAmount,
+		DebtorId:       req.DebtorId,
+		DebtorName:     req.DebtorName,
+		Date:           date,
+		OriginalAmount: debtAmount,
+		Currency:       req.Currency,
+		Outbound:       true, // They owe you
+		AccountId:      &accountId,
+	}
+
+	expenseResult, debtResult, err := postgres.InsertExpenseWithDebt(expense, debt)
+	if err != nil {
+		log.Printf("Error creating expense with debt: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: err.Error()})
+		return
+	}
+
+	// Update expense sheet asynchronously
+	go func() {
+		config, err := postgres.GetConfigByType("expenses")
+		if err != nil {
+			log.Printf("Error getting expense config: %v", err)
+			return
+		}
+		googleSS.SubmitExpenseRow(expenseResult, config)
+	}()
+
+	// Return both records
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"expense": expenseResult,
+		"debt":    debtResult,
+	})
+}
+
 func submitDebtRepayment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -1277,6 +1377,7 @@ func LoadRoutes(muxRouter *mux.Router) {
 	api.HandleFunc("/debts", getDebts).Methods("GET")
 	api.HandleFunc("/debts/by-debtor", getDebtsByDebtor).Methods("GET")
 	api.HandleFunc("/debt/repayment", submitDebtRepayment).Methods("POST", "OPTIONS")
+	api.HandleFunc("/expense-debt", submitExpenseWithDebt).Methods("POST", "OPTIONS")
 	api.HandleFunc("/expenses/recent", getRecentExpenses).Methods("GET")
 }
 
