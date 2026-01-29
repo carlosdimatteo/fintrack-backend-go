@@ -555,6 +555,56 @@ func createAccount(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+func getInvestments(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	// Parse query params
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+	accountIdStr := r.URL.Query().Get("account_id")
+
+	limit := 50
+	offset := 0
+	var accountId *int32
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+	if accountIdStr != "" {
+		if id, err := strconv.Atoi(accountIdStr); err == nil {
+			id32 := int32(id)
+			accountId = &id32
+		}
+	}
+
+	investments, count, err := postgres.GetInvestments(limit, offset, accountId)
+	if err != nil {
+		log.Printf("Error getting investments: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	res := map[string]interface{}{
+		"investments": investments,
+		"total":       count,
+		"limit":       limit,
+		"offset":      offset,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
 func getInvestmentAccounts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -1059,6 +1109,24 @@ func getExpectedBalances(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(balances)
 }
 
+func getInvestmentExpectedCapital(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	capital, err := postgres.GetInvestmentAccountExpectedCapital()
+	if err != nil {
+		log.Printf("Error getting investment expected capital: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(capital)
+}
+
 // ========== PHASE 7: DEBT MODULE ENHANCEMENTS ==========
 
 func getDebts(w http.ResponseWriter, r *http.Request) {
@@ -1159,22 +1227,32 @@ type RepaymentRequest struct {
 
 // ExpenseDebtRequest is for creating an expense that also creates a linked debt
 // Use case: "I lent $100 to John from my BOFA account"
+// DebtEntry represents a single debt in the expense-debt request
+type DebtEntry struct {
+	DebtorId   int32   `json:"debtor_id"`
+	DebtorName string  `json:"debtor_name"`
+	Amount     float64 `json:"amount"`
+	Currency   string  `json:"currency"`
+}
+
 type ExpenseDebtRequest struct {
 	// Expense fields
 	Date           string  `json:"date"`
 	Category       string  `json:"category"`
 	CategoryId     int32   `json:"category_id"`
-	Amount         float64 `json:"amount"` // The expense amount (money that left your account)
+	Expense        float64 `json:"expense"` // The expense amount (money that left your account)
 	Description    string  `json:"description"`
 	Method         string  `json:"method"`
-	OriginalAmount float64 `json:"original_amount"`
+	OriginalAmount float64 `json:"originalAmount"`
 	AccountId      int32   `json:"account_id"`
 	AccountType    string  `json:"account_type"`
-	// Debt fields
-	DebtorId       int32   `json:"debtor_id"`
-	DebtorName     string  `json:"debtor_name"`
-	DebtAmount     float64 `json:"debt_amount"` // How much they owe (can be same as amount or partial)
-	Currency       string  `json:"currency"`
+	// Multiple debts (preferred)
+	Debts []DebtEntry `json:"debts"`
+	// Single debt fields (backward compatible)
+	DebtorId   int32   `json:"debtor_id"`
+	DebtorName string  `json:"debtor_name"`
+	DebtAmount float64 `json:"debt_amount"`
+	Currency   string  `json:"currency"`
 }
 
 func submitExpenseWithDebt(w http.ResponseWriter, r *http.Request) {
@@ -1197,18 +1275,12 @@ func submitExpenseWithDebt(w http.ResponseWriter, r *http.Request) {
 		date = time.Now().Format(time.DateTime)
 	}
 
-	// Default debt amount to expense amount if not specified
-	debtAmount := req.DebtAmount
-	if debtAmount == 0 {
-		debtAmount = req.Amount
-	}
-
 	// Create expense record
 	expense := types.Expense{
 		Date:           date,
 		Category:       req.Category,
 		CategoryId:     req.CategoryId,
-		Expense:        req.Amount,
+		Expense:        req.Expense,
 		Description:    req.Description,
 		Method:         req.Method,
 		OriginalAmount: req.OriginalAmount,
@@ -1216,23 +1288,53 @@ func submitExpenseWithDebt(w http.ResponseWriter, r *http.Request) {
 		AccountType:    req.AccountType,
 	}
 
-	// Create debt record (outbound = they owe you)
+	// Build debts array - support both new format (debts array) and old format (single debt fields)
+	var debts []types.Debt
 	accountId := req.AccountId
-	debt := types.Debt{
-		Description:    req.Description,
-		Amount:         debtAmount,
-		DebtorId:       req.DebtorId,
-		DebtorName:     req.DebtorName,
-		Date:           date,
-		OriginalAmount: debtAmount,
-		Currency:       req.Currency,
-		Outbound:       true, // They owe you
-		AccountId:      &accountId,
+
+	if len(req.Debts) > 0 {
+		// New format: multiple debts
+		for _, d := range req.Debts {
+			debt := types.Debt{
+				Description:    req.Description,
+				Amount:         d.Amount,
+				DebtorId:       d.DebtorId,
+				DebtorName:     d.DebtorName,
+				Date:           date,
+				OriginalAmount: d.Amount,
+				Currency:       d.Currency,
+				Outbound:       true,
+				AccountId:      &accountId,
+			}
+			debts = append(debts, debt)
+		}
+	} else if req.DebtorId != 0 {
+		// Old format: single debt (backward compatible)
+		debtAmount := req.DebtAmount
+		if debtAmount == 0 {
+			debtAmount = req.Expense
+		}
+		debt := types.Debt{
+			Description:    req.Description,
+			Amount:         debtAmount,
+			DebtorId:       req.DebtorId,
+			DebtorName:     req.DebtorName,
+			Date:           date,
+			OriginalAmount: debtAmount,
+			Currency:       req.Currency,
+			Outbound:       true,
+			AccountId:      &accountId,
+		}
+		debts = append(debts, debt)
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "At least one debt is required (use 'debts' array or single debt fields)"})
+		return
 	}
 
-	expenseResult, debtResult, err := postgres.InsertExpenseWithDebt(expense, debt)
+	expenseResult, debtResults, err := postgres.InsertExpenseWithDebts(expense, debts)
 	if err != nil {
-		log.Printf("Error creating expense with debt: %v", err)
+		log.Printf("Error creating expense with debts: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(types.Response{Success: false, Message: err.Error()})
 		return
@@ -1248,12 +1350,12 @@ func submitExpenseWithDebt(w http.ResponseWriter, r *http.Request) {
 		googleSS.SubmitExpenseRow(expenseResult, config)
 	}()
 
-	// Return both records
+	// Return expense and all debts
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"expense": expenseResult,
-		"debt":    debtResult,
+		"debts":   debtResults,
 	})
 }
 
@@ -1342,7 +1444,7 @@ func LoadRoutes(muxRouter *mux.Router) {
 	api.HandleFunc("/config", getConfig).Methods("GET")
 	api.HandleFunc("/config", setConfig).Methods("POST", "OPTIONS")
 	api.HandleFunc("/investment", submitInvestment).Methods("POST", "OPTIONS")
-	// api.HandleFunc("/investment", getInvestments).Methods("GET")
+	api.HandleFunc("/investments", getInvestments).Methods("GET")
 	api.HandleFunc("/debt", submitDebt).Methods("POST", "OPTIONS")
 	// api.HandleFunc("/debt", getDebts).Methods("GET")
 	api.HandleFunc("/income", submitIncome).Methods("POST", "OPTIONS")
@@ -1372,6 +1474,7 @@ func LoadRoutes(muxRouter *mux.Router) {
 
 	// Expected Balance (Phase 1B view)
 	api.HandleFunc("/accounts/expected-balance", getExpectedBalances).Methods("GET")
+	api.HandleFunc("/investment-accounts/expected-capital", getInvestmentExpectedCapital).Methods("GET")
 
 	// Phase 7: Debt Module Enhancements
 	api.HandleFunc("/debts", getDebts).Methods("GET")

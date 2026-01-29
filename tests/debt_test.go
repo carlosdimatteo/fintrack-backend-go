@@ -152,6 +152,79 @@ func TestExpenseWithDebtPartialAmount(t *testing.T) {
 	AssertFloatEqual(t, 60.00, debtResult.Amount, 0.01, "Debt should be partial amount")
 }
 
+// TestExpenseWithMultipleDebts verifies creating expense with multiple debts (split)
+func TestExpenseWithMultipleDebts(t *testing.T) {
+	CleanupTables(t)
+	SeedTestData(t)
+
+	testAccount := GetTestAccount(TestAccountBankID)
+	testCategory := GetTestCategory(TestCategoryFoodID)
+	debtor1 := GetTestDebtor(TestDebtorJohnID)
+	debtor2 := GetTestDebtor(TestDebtorJaneID)
+	now := time.Now()
+
+	initialExpected := GetAccountExpectedBalance(t, testAccount.ID)
+
+	// I paid $100 dinner, John owes $30, Jane owes $30, I cover $40
+	expense := types.Expense{
+		Date:           now.Format(time.DateTime),
+		Category:       testCategory.Name,
+		CategoryId:     testCategory.ID,
+		Expense:        100.00,
+		Description:    "Group dinner split",
+		Method:         "Debit",
+		OriginalAmount: 100.00,
+		AccountId:      testAccount.ID,
+		AccountType:    testAccount.Type,
+	}
+
+	debts := []types.Debt{
+		{
+			Description:    "John's share",
+			Amount:         30.00,
+			DebtorId:       debtor1.ID,
+			DebtorName:     debtor1.Name,
+			Date:           now.Format(time.DateTime),
+			OriginalAmount: 30.00,
+			Currency:       "USD",
+			Outbound:       true,
+		},
+		{
+			Description:    "Jane's share",
+			Amount:         30.00,
+			DebtorId:       debtor2.ID,
+			DebtorName:     debtor2.Name,
+			Date:           now.Format(time.DateTime),
+			OriginalAmount: 30.00,
+			Currency:       "USD",
+			Outbound:       true,
+		},
+	}
+
+	expenseResult, debtResults, err := postgres.InsertExpenseWithDebts(expense, debts)
+	AssertNoError(t, err, "Insert expense with multiple debts")
+
+	// Verify expense
+	AssertFloatEqual(t, 100.00, expenseResult.Expense, 0.01, "Expense amount")
+
+	// Verify both debts created
+	AssertEqual(t, 2, len(debtResults), "Should create 2 debts")
+	AssertFloatEqual(t, 30.00, debtResults[0].Amount, 0.01, "First debt amount")
+	AssertFloatEqual(t, 30.00, debtResults[1].Amount, 0.01, "Second debt amount")
+
+	// Both debts linked to same expense
+	if debtResults[0].ExpenseId == nil || *debtResults[0].ExpenseId != expenseResult.Id {
+		t.Error("First debt should be linked to expense")
+	}
+	if debtResults[1].ExpenseId == nil || *debtResults[1].ExpenseId != expenseResult.Id {
+		t.Error("Second debt should be linked to expense")
+	}
+
+	// Expected balance decreased by full expense amount
+	newExpected := GetAccountExpectedBalance(t, testAccount.ID)
+	AssertFloatEqual(t, initialExpected-100.00, newExpected, 0.01, "Expected balance decreased by full expense")
+}
+
 // TestExpenseWithDebtTransaction verifies atomicity (both succeed or both fail)
 func TestExpenseWithDebtTransaction(t *testing.T) {
 	CleanupTables(t)

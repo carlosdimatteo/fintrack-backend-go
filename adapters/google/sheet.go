@@ -18,7 +18,18 @@ const (
 	sheetName       = "2024 Fintrack"
 )
 
+// IsDevMode returns true if GO_ENV is set to dev, development, or test
+// In dev mode, sheet operations are skipped
+func IsDevMode() bool {
+	env := os.Getenv("GO_ENV")
+	return env == "dev" || env == "development" || env == "test"
+}
+
 func getSheetService() (*sheets.SpreadsheetsValuesService, error) {
+	// Skip in dev mode
+	if IsDevMode() {
+		return nil, nil
+	}
 	ctx := context.Background()
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
@@ -37,12 +48,17 @@ func getSheetService() (*sheets.SpreadsheetsValuesService, error) {
 }
 
 func SubmitExpenseRow(expensedata types.Expense, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		// Dev mode - skip sheet operations
+		log.Println("[sheets] Skipping SubmitExpenseRow (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{
 			{expensedata.Date,
@@ -74,12 +90,16 @@ func SubmitExpenseRow(expensedata types.Expense, config types.Config) (*sheets.S
 	return nil, nil
 }
 func SubmitBudget(budgets []types.Budget, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping SubmitBudget (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{},
 	}
@@ -97,12 +117,16 @@ func SubmitBudget(budgets []types.Budget, config types.Config) (*sheets.Spreadsh
 	return nil, nil
 }
 func SubmitInvestment(investment types.Investment, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping SubmitInvestment (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{
 			{investment.Date,
@@ -126,12 +150,16 @@ func SubmitInvestment(investment types.Investment, config types.Config) (*sheets
 }
 
 func SubmitIncome(income types.Income, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping SubmitIncome (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{
 			{income.Date,
@@ -154,12 +182,16 @@ func SubmitIncome(income types.Income, config types.Config) (*sheets.Spreadsheet
 }
 
 func SubmitDebt(debt types.Debt, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping SubmitDebt (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	typeString := "Borrowed"
 	if debt.Outbound {
 		typeString = "Lent"
@@ -188,12 +220,16 @@ func SubmitDebt(debt types.Debt, config types.Config) (*sheets.SpreadsheetsValue
 }
 
 func SubmitAccount(account types.Account, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping SubmitAccount (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{
 			{account.Id,
@@ -216,12 +252,16 @@ func SubmitAccount(account types.Account, config types.Config) (*sheets.Spreadsh
 	return nil, nil
 }
 func UpdateAccountBalances(accounts []types.Account, config types.Config) (*sheets.SpreadsheetsValuesUpdateCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping UpdateAccountBalances (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{},
@@ -249,12 +289,16 @@ func UpdateAccountBalances(accounts []types.Account, config types.Config) (*shee
 
 }
 func SubmitInvestmentAccount(investmentAccount types.InvestmentAccount, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping SubmitInvestmentAccount (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{
 			{investmentAccount.Id,
@@ -276,12 +320,16 @@ func SubmitInvestmentAccount(investmentAccount types.InvestmentAccount, config t
 }
 
 func UpdateInvestmentAccountBalances(accounts []types.InvestmentAccount, config types.Config) (*sheets.SpreadsheetsValuesUpdateCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping UpdateInvestmentAccountBalances (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{},
@@ -309,12 +357,16 @@ func UpdateInvestmentAccountBalances(accounts []types.InvestmentAccount, config 
 
 }
 func SubmitDebtor(debtor types.Debtor, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping SubmitDebtor (dev mode)")
+		return nil, nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{
 			{debtor.Id,
@@ -336,11 +388,15 @@ func SubmitDebtor(debtor types.Debtor, config types.Config) (*sheets.Spreadsheet
 // UpdateSheetCell updates a single cell with a value (uses Update, not Append)
 // sheetRange should be in format "SheetName!A1" (e.g., "2026!D3")
 func UpdateSheetCell(sheetRange string, value interface{}) error {
-	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 	sheetValueService, err := getSheetService()
 	if err != nil {
 		return err
 	}
+	if sheetValueService == nil {
+		log.Println("[sheets] Skipping UpdateSheetCell (dev mode)")
+		return nil
+	}
+	spreadsheetID := os.Getenv("SPREADSHEET_ID")
 
 	dataToWrite := sheets.ValueRange{
 		Values: [][]interface{}{{value}},
