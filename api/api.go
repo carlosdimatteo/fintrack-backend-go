@@ -52,16 +52,17 @@ func submitExpenseRow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var expense types.Expense
-	json.NewDecoder(r.Body).Decode(&expense)
-	fmt.Println("received: ", expense)
-	fmt.Println("submitting row :  description:", expense.Description, " amount:", expense.OriginalAmount, " expense: ", expense.Expense)
-	fmt.Println("expense : ", expense.Expense)
+	if err := json.NewDecoder(r.Body).Decode(&expense); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 	expense.Date = time.Now().Format(time.DateTime)
 
 	// 1. Get config (using postgres)
 	config, err := postgres.GetConfigByType("expenses")
 	if err != nil {
-		fmt.Println("error getting config: ", err)
+		log.Printf("Error getting config: %v", err)
 		ServerErrorResponse(w, r)
 		return
 	}
@@ -170,7 +171,11 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var arrayOfBudgets []types.Budget
-	json.NewDecoder(r.Body).Decode(&arrayOfBudgets)
+	if err := json.NewDecoder(r.Body).Decode(&arrayOfBudgets); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 	config, err := postgres.GetConfigByType(types.ConfigType["budget"])
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -193,7 +198,8 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		_, err = postgres.InsertBudgetsIntoDatabase(arrayOfBudgets)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("Error inserting budgets: %v", err)
+			ServerErrorResponse(w, r)
 			return
 		}
 	}()
@@ -226,7 +232,11 @@ func setConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var arrayOfConfig []types.Config
-	json.NewDecoder(r.Body).Decode(&arrayOfConfig)
+	if err := json.NewDecoder(r.Body).Decode(&arrayOfConfig); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 	_, err := postgres.InsertConfigIntoDatabase(arrayOfConfig)
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -252,9 +262,11 @@ func submitInvestment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var investment types.Investment
-	json.NewDecoder(r.Body).Decode(&investment)
-	fmt.Println("received investment: ", investment)
-	fmt.Println("submitting row :  description:", investment.Description, " amount:", investment.Amount, " account: ", investment.AccountName, " type: ", investment.Type)
+	if err := json.NewDecoder(r.Body).Decode(&investment); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 
 	// Validate type
 	if investment.Type != "deposit" && investment.Type != "withdrawal" {
@@ -271,7 +283,7 @@ func submitInvestment(w http.ResponseWriter, r *http.Request) {
 	// 1. Get config for investment row append
 	config, err := postgres.GetConfigByType("investments")
 	if err != nil {
-		fmt.Println("error getting config: ", err)
+		log.Printf("Error getting config: %v", err)
 		ServerErrorResponse(w, r)
 		return
 	}
@@ -331,14 +343,15 @@ func submitDebt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var debt types.Debt
-	json.NewDecoder(r.Body).Decode(&debt)
-	fmt.Println("received debt: ", debt)
-	fmt.Println("submitting row :  description:", debt.Description, " amount:", debt.Amount, " debtor: ", debt.DebtorName)
-	fmt.Println("amount : ", debt.Amount)
+	if err := json.NewDecoder(r.Body).Decode(&debt); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 	debt.Date = time.Now().Format(time.DateTime)
 	config, err := postgres.GetConfigByType("debt")
 	if err != nil {
-		fmt.Println("error getting config: ", err)
+		log.Printf("Error getting config: %v", err)
 		ServerErrorResponse(w, r)
 		return
 	}
@@ -374,16 +387,17 @@ func submitIncome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var income types.Income
-	json.NewDecoder(r.Body).Decode(&income)
-	fmt.Println("received income: ", income)
-	fmt.Println("submitting row :  description:", income.Description, " amount:", income.Amount, " account: ", income.AccountName)
-	fmt.Println("amount : ", income.Amount)
+	if err := json.NewDecoder(r.Body).Decode(&income); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 	income.Date = time.Now().Format(time.DateTime)
 
 	// 1. Get config for income row append (using postgres now)
 	config, err := postgres.GetConfigByType("income")
 	if err != nil {
-		fmt.Println("error getting config: ", err)
+		log.Printf("Error getting config: %v", err)
 		ServerErrorResponse(w, r)
 		return
 	}
@@ -523,20 +537,20 @@ func createAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var accountToInsert types.Account
-	json.NewDecoder(r.Body).Decode(&accountToInsert)
-	fmt.Println("received account: ", accountToInsert)
+	if err := json.NewDecoder(r.Body).Decode(&accountToInsert); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 	config, err := postgres.GetConfigByType("accounts")
 	if err != nil {
+		log.Printf("Error getting config: %v", err)
 		ServerErrorResponse(w, r)
 		return
 	}
 	account, err := postgres.InsertAccountIntoDatabase(accountToInsert)
 	if err != nil {
-		ServerErrorResponse(w, r)
-		return
-	}
-	if err != nil {
-		fmt.Println("error getting config: ", err)
+		log.Printf("Error inserting account: %v", err)
 		ServerErrorResponse(w, r)
 		return
 	}
@@ -633,9 +647,11 @@ func createInvestmentAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var accountToInsert types.InvestmentAccount
-
-	json.NewDecoder(r.Body).Decode(&accountToInsert)
-	fmt.Println("received account: ", accountToInsert)
+	if err := json.NewDecoder(r.Body).Decode(&accountToInsert); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 	config, err := postgres.GetConfigByType("investment_accounts")
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -708,8 +724,11 @@ func createDebtor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var debtorToInsert types.Debtor
-	json.NewDecoder(r.Body).Decode(&debtorToInsert)
-	fmt.Println("received account: ", debtorToInsert)
+	if err := json.NewDecoder(r.Body).Decode(&debtorToInsert); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 	config, err := postgres.GetConfigByType("debtors")
 	if err != nil {
 		ServerErrorResponse(w, r)
@@ -744,8 +763,12 @@ func setAccountingForCurrentMonth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var accountToInsert types.RealBalanceByAccounts
+	if err := json.NewDecoder(r.Body).Decode(&accountToInsert); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{Success: false, Message: "Invalid JSON"})
+		return
+	}
 	res := types.RealBalanceByAccounts{Accounts: []types.Account{}, InvestmentAccounts: []types.InvestmentAccount{}}
-	json.NewDecoder(r.Body).Decode(&accountToInsert)
 
 	if len(accountToInsert.Accounts) > 0 {
 		accounts, err := postgres.UpdateAccountBalances(accountToInsert.Accounts)

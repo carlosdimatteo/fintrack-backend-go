@@ -33,28 +33,26 @@ func getSheetService() (*sheets.SpreadsheetsValuesService, error) {
 	ctx := context.Background()
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
-		log.Fatal(err)
-		return nil, err
+		log.Printf("[sheets] Error reading credentials file: %v", err)
+		return nil, fmt.Errorf("error reading credentials: %w", err)
 	}
 	client := option.WithCredentialsJSON(data)
 	sheetService, err := sheets.NewService(ctx, client)
 	if err != nil {
-		log.Fatal(err)
-		return nil, err
+		log.Printf("[sheets] Error creating sheet service: %v", err)
+		return nil, fmt.Errorf("error creating sheet service: %w", err)
 	}
 
 	sheetValueService := sheets.NewSpreadsheetsValuesService(sheetService)
-	return sheetValueService, err
+	return sheetValueService, nil
 }
 
 func SubmitExpenseRow(expensedata types.Expense, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
-		// Dev mode - skip sheet operations
 		log.Println("[sheets] Skipping SubmitExpenseRow (dev mode)")
 		return nil, nil
 	}
@@ -84,15 +82,15 @@ func SubmitExpenseRow(expensedata types.Expense, config types.Config) (*sheets.S
 		sheetAndRange,
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to write expense to sheet: %v", err)
+		return nil, fmt.Errorf("error writing to sheet: %w", err)
 	}
 	return nil, nil
 }
+
 func SubmitBudget(budgets []types.Budget, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
@@ -111,15 +109,15 @@ func SubmitBudget(budgets []types.Budget, config types.Config) (*sheets.Spreadsh
 		fmt.Sprint(config.Sheet, config.A1Range),
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to write budget to sheet: %v", err)
+		return nil, fmt.Errorf("error writing to sheet: %w", err)
 	}
 	return nil, nil
 }
+
 func SubmitInvestment(investment types.Investment, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
@@ -143,8 +141,8 @@ func SubmitInvestment(investment types.Investment, config types.Config) (*sheets
 		fmt.Sprint(config.Sheet, config.A1Range),
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to write investment to sheet: %v", err)
+		return nil, fmt.Errorf("error writing to sheet: %w", err)
 	}
 	return nil, nil
 }
@@ -152,7 +150,6 @@ func SubmitInvestment(investment types.Investment, config types.Config) (*sheets
 func SubmitIncome(income types.Income, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
@@ -175,8 +172,8 @@ func SubmitIncome(income types.Income, config types.Config) (*sheets.Spreadsheet
 		fmt.Sprint(config.Sheet, config.A1Range),
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to write income to sheet: %v", err)
+		return nil, fmt.Errorf("error writing to sheet: %w", err)
 	}
 	return nil, nil
 }
@@ -184,7 +181,6 @@ func SubmitIncome(income types.Income, config types.Config) (*sheets.Spreadsheet
 func SubmitDebt(debt types.Debt, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
@@ -213,8 +209,8 @@ func SubmitDebt(debt types.Debt, config types.Config) (*sheets.SpreadsheetsValue
 		fmt.Sprint(config.Sheet, config.A1Range),
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to write debt to sheet: %v", err)
+		return nil, fmt.Errorf("error writing to sheet: %w", err)
 	}
 	return nil, nil
 }
@@ -222,7 +218,6 @@ func SubmitDebt(debt types.Debt, config types.Config) (*sheets.SpreadsheetsValue
 func SubmitAccount(account types.Account, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
@@ -240,21 +235,20 @@ func SubmitAccount(account types.Account, config types.Config) (*sheets.Spreadsh
 		},
 	}
 	sheetRange := fmt.Sprint(config.Sheet, config.A1Range)
-	fmt.Println(sheetRange)
 	_, err = sheetValueService.Append(
 		spreadsheetID,
 		sheetRange,
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to write account to sheet: %v", err)
+		return nil, fmt.Errorf("error writing to sheet: %w", err)
 	}
 	return nil, nil
 }
+
 func UpdateAccountBalances(accounts []types.Account, config types.Config) (*sheets.SpreadsheetsValuesUpdateCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
@@ -271,7 +265,6 @@ func UpdateAccountBalances(accounts []types.Account, config types.Config) (*shee
 		return accounts[i].Id < accounts[j].Id
 	})
 	for _, account := range accounts {
-
 		dataToWrite.Values = append(dataToWrite.Values, []interface{}{account.Balance})
 	}
 	batchUpdateValueReq := sheets.BatchUpdateValuesRequest{
@@ -282,16 +275,15 @@ func UpdateAccountBalances(accounts []types.Account, config types.Config) (*shee
 		spreadsheetID,
 		&batchUpdateValueReq).Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to update account balances: %v", err)
+		return nil, fmt.Errorf("error updating sheet: %w", err)
 	}
 	return nil, nil
-
 }
+
 func SubmitInvestmentAccount(investmentAccount types.InvestmentAccount, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
@@ -313,8 +305,8 @@ func SubmitInvestmentAccount(investmentAccount types.InvestmentAccount, config t
 		fmt.Sprint(config.Sheet, config.A1Range),
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to write investment account to sheet: %v", err)
+		return nil, fmt.Errorf("error writing to sheet: %w", err)
 	}
 	return nil, nil
 }
@@ -322,7 +314,6 @@ func SubmitInvestmentAccount(investmentAccount types.InvestmentAccount, config t
 func UpdateInvestmentAccountBalances(accounts []types.InvestmentAccount, config types.Config) (*sheets.SpreadsheetsValuesUpdateCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
@@ -339,7 +330,6 @@ func UpdateInvestmentAccountBalances(accounts []types.InvestmentAccount, config 
 		return accounts[i].Id < accounts[j].Id
 	})
 	for _, account := range accounts {
-
 		dataToWrite.Values = append(dataToWrite.Values, []interface{}{account.Balance})
 	}
 	batchUpdateValueReq := sheets.BatchUpdateValuesRequest{
@@ -350,16 +340,15 @@ func UpdateInvestmentAccountBalances(accounts []types.InvestmentAccount, config 
 		spreadsheetID,
 		&batchUpdateValueReq).Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to update investment account balances: %v", err)
+		return nil, fmt.Errorf("error updating sheet: %w", err)
 	}
 	return nil, nil
-
 }
+
 func SubmitDebtor(debtor types.Debtor, config types.Config) (*sheets.SpreadsheetsValuesAppendCall, error) {
 	sheetValueService, err := getSheetService()
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	if sheetValueService == nil {
@@ -379,8 +368,8 @@ func SubmitDebtor(debtor types.Debtor, config types.Config) (*sheets.Spreadsheet
 		fmt.Sprint(config.Sheet, config.A1Range),
 		&dataToWrite).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
-		log.Fatalf("Unable to write data to sheet: %v", err)
-		return nil, err
+		log.Printf("[sheets] Unable to write debtor to sheet: %v", err)
+		return nil, fmt.Errorf("error writing to sheet: %w", err)
 	}
 	return nil, nil
 }
@@ -409,11 +398,11 @@ func UpdateSheetCell(sheetRange string, value interface{}) error {
 	).ValueInputOption("USER_ENTERED").Do()
 
 	if err != nil {
-		log.Printf("Unable to update cell %s: %v", sheetRange, err)
-		return err
+		log.Printf("[sheets] Unable to update cell %s: %v", sheetRange, err)
+		return fmt.Errorf("error updating cell: %w", err)
 	}
 
-	log.Printf("Updated cell %s with value: %v", sheetRange, value)
+	log.Printf("[sheets] Updated cell %s with value: %v", sheetRange, value)
 	return nil
 }
 
