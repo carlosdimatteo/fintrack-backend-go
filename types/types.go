@@ -206,6 +206,37 @@ type YearlyGoals struct {
 	SavingsGoal     float64   `json:"savings_goal"`
 	InvestmentGoal  float64   `json:"investment_goal"`
 	IdealInvestment float64   `json:"ideal_investment"`
+	// Baseline values (start of year) for progress calculation
+	BaselineFiatBalance    float64 `json:"baseline_fiat_balance"`
+	BaselineCryptoBalance  float64 `json:"baseline_crypto_balance"`
+	BaselineCryptoCapital  float64 `json:"baseline_crypto_capital"`
+	BaselineBrokerBalance  float64 `json:"baseline_broker_balance"`
+	BaselineBrokerCapital  float64 `json:"baseline_broker_capital"`
+}
+
+// SavingsProgress represents progress toward savings goal
+type SavingsProgress struct {
+	// Using real net worth (includes all gains/losses)
+	BaselineNetWorth float64 `json:"baseline_net_worth"`
+	CurrentNetWorth  float64 `json:"current_net_worth"`
+	SavedThisYear    float64 `json:"saved_this_year"`
+	Goal             float64 `json:"goal"`
+	Remaining        float64 `json:"remaining"`
+	Percentage       float64 `json:"percentage"`
+
+	// Without broker winnings (real fiat + real crypto + broker capital)
+	BaselineWithoutBrokerWinnings float64 `json:"baseline_without_broker_winnings"`
+	CurrentWithoutBrokerWinnings  float64 `json:"current_without_broker_winnings"`
+	SavedWithoutBrokerWinnings    float64 `json:"saved_without_broker_winnings"`
+	RemainingWithoutBroker        float64 `json:"remaining_without_broker"`
+	PercentageWithoutBroker       float64 `json:"percentage_without_broker"`
+
+	// Without any winnings (conservative: fiat + min(crypto) + min(broker))
+	BaselineWithoutWinnings float64 `json:"baseline_without_winnings"`
+	CurrentWithoutWinnings  float64 `json:"current_without_winnings"`
+	SavedWithoutWinnings    float64 `json:"saved_without_winnings"`
+	RemainingWithoutWinnings float64 `json:"remaining_without_winnings"`
+	PercentageWithoutWinnings float64 `json:"percentage_without_winnings"`
 }
 
 // NetWorthSnapshot represents a monthly snapshot of net worth (Phase 4)
@@ -235,6 +266,53 @@ type NetWorthSnapshot struct {
 	FiatPercent   float64 `json:"fiat_percent"`
 	CryptoPercent float64 `json:"crypto_percent"`
 	BrokerPercent float64 `json:"broker_percent"`
+}
+
+// BudgetHistoryCategory represents spending for a single category in a month
+type BudgetHistoryCategory struct {
+	CategoryId      int32   `json:"category_id"`
+	CategoryName    string  `json:"category_name"`
+	Budget          float64 `json:"budget"`
+	Spent           float64 `json:"spent"`
+	Difference      float64 `json:"difference"`       // budget - spent (positive = under budget)
+	PctOfExpenses   float64 `json:"pct_of_expenses"`  // spent / total_expenses * 100
+	PctOfIncome     float64 `json:"pct_of_income"`    // spent / total_income * 100
+}
+
+// BudgetHistoryMonth represents budget breakdown for a single month
+type BudgetHistoryMonth struct {
+	Month         int                     `json:"month"`
+	TotalExpenses float64                 `json:"total_expenses"`
+	TotalIncome   float64                 `json:"total_income"`
+	Categories    []BudgetHistoryCategory `json:"categories"`
+}
+
+// BudgetHistoryYearlyCategory represents yearly totals for a category
+type BudgetHistoryYearlyCategory struct {
+	CategoryId       int32   `json:"category_id"`
+	CategoryName     string  `json:"category_name"`
+	YearlyBudget     float64 `json:"yearly_budget"`      // budget * 12
+	TotalSpent       float64 `json:"total_spent"`
+	Difference       float64 `json:"difference"`         // yearly_budget - total_spent
+	PctOfExpenses    float64 `json:"pct_of_expenses"`    // total_spent / yearly_expenses * 100
+	PctOfIncome      float64 `json:"pct_of_income"`      // total_spent / yearly_income * 100
+}
+
+// BudgetHistoryYearlyTotals represents yearly aggregate data
+type BudgetHistoryYearlyTotals struct {
+	TotalExpenses float64                       `json:"total_expenses"`
+	TotalIncome   float64                       `json:"total_income"`
+	TotalBudget   float64                       `json:"total_budget"`    // sum of all category budgets * 12
+	Difference    float64                       `json:"difference"`      // total_budget - total_expenses
+	SavingsRate   float64                       `json:"savings_rate"`    // (income - expenses) / income * 100
+	Categories    []BudgetHistoryYearlyCategory `json:"categories"`
+}
+
+// BudgetHistoryResponse represents the full year budget history
+type BudgetHistoryResponse struct {
+	Year         int                       `json:"year"`
+	Months       []BudgetHistoryMonth      `json:"months"`
+	YearlyTotals BudgetHistoryYearlyTotals `json:"yearly_totals"`
 }
 
 var ConfigType map[string]string

@@ -439,11 +439,17 @@ func GetYearlyGoals(year int) (types.YearlyGoals, error) {
 
 	var goals types.YearlyGoals
 	err = pool.QueryRow(context.Background(),
-		`SELECT id, created_at, year, savings_goal, investment_goal, ideal_investment 
+		`SELECT id, created_at, year, savings_goal, investment_goal, ideal_investment,
+		 COALESCE(baseline_fiat_balance, 0), COALESCE(baseline_crypto_balance, 0),
+		 COALESCE(baseline_crypto_capital, 0), COALESCE(baseline_broker_balance, 0),
+		 COALESCE(baseline_broker_capital, 0)
 		 FROM yearly_goals WHERE year = $1`,
 		year,
 	).Scan(&goals.Id, &goals.CreatedAt, &goals.Year, &goals.SavingsGoal,
-		&goals.InvestmentGoal, &goals.IdealInvestment)
+		&goals.InvestmentGoal, &goals.IdealInvestment,
+		&goals.BaselineFiatBalance, &goals.BaselineCryptoBalance,
+		&goals.BaselineCryptoCapital, &goals.BaselineBrokerBalance,
+		&goals.BaselineBrokerCapital)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -464,16 +470,31 @@ func UpsertYearlyGoals(goals types.YearlyGoals) (types.YearlyGoals, error) {
 
 	var result types.YearlyGoals
 	err = pool.QueryRow(context.Background(),
-		`INSERT INTO yearly_goals (year, savings_goal, investment_goal, ideal_investment)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO yearly_goals (year, savings_goal, investment_goal, ideal_investment,
+		   baseline_fiat_balance, baseline_crypto_balance, baseline_crypto_capital,
+		   baseline_broker_balance, baseline_broker_capital)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 ON CONFLICT (year) DO UPDATE SET
 		   savings_goal = EXCLUDED.savings_goal,
 		   investment_goal = EXCLUDED.investment_goal,
-		   ideal_investment = EXCLUDED.ideal_investment
-		 RETURNING id, created_at, year, savings_goal, investment_goal, ideal_investment`,
+		   ideal_investment = EXCLUDED.ideal_investment,
+		   baseline_fiat_balance = EXCLUDED.baseline_fiat_balance,
+		   baseline_crypto_balance = EXCLUDED.baseline_crypto_balance,
+		   baseline_crypto_capital = EXCLUDED.baseline_crypto_capital,
+		   baseline_broker_balance = EXCLUDED.baseline_broker_balance,
+		   baseline_broker_capital = EXCLUDED.baseline_broker_capital
+		 RETURNING id, created_at, year, savings_goal, investment_goal, ideal_investment,
+		   COALESCE(baseline_fiat_balance, 0), COALESCE(baseline_crypto_balance, 0),
+		   COALESCE(baseline_crypto_capital, 0), COALESCE(baseline_broker_balance, 0),
+		   COALESCE(baseline_broker_capital, 0)`,
 		goals.Year, goals.SavingsGoal, goals.InvestmentGoal, goals.IdealInvestment,
+		goals.BaselineFiatBalance, goals.BaselineCryptoBalance, goals.BaselineCryptoCapital,
+		goals.BaselineBrokerBalance, goals.BaselineBrokerCapital,
 	).Scan(&result.Id, &result.CreatedAt, &result.Year, &result.SavingsGoal,
-		&result.InvestmentGoal, &result.IdealInvestment)
+		&result.InvestmentGoal, &result.IdealInvestment,
+		&result.BaselineFiatBalance, &result.BaselineCryptoBalance,
+		&result.BaselineCryptoCapital, &result.BaselineBrokerBalance,
+		&result.BaselineBrokerCapital)
 
 	if err != nil {
 		return types.YearlyGoals{}, fmt.Errorf("error upserting goals: %w", err)
@@ -618,6 +639,66 @@ func GetNetWorthHistory() ([]types.NetWorthSnapshot, error) {
 	}
 
 	return results, nil
+}
+
+// CalculateSavingsProgress calculates progress toward savings goal using baseline values
+func CalculateSavingsProgress(goals types.YearlyGoals, netWorth types.NetWorthSnapshot) types.SavingsProgress {
+	progress := types.SavingsProgress{
+		Goal: goals.SavingsGoal,
+	}
+
+	// Calculate baseline net worth values
+	progress.BaselineNetWorth = goals.BaselineFiatBalance + goals.BaselineCryptoBalance + goals.BaselineBrokerBalance
+
+	// Baseline without broker winnings = fiat + crypto real + broker capital
+	progress.BaselineWithoutBrokerWinnings = goals.BaselineFiatBalance + goals.BaselineCryptoBalance + goals.BaselineBrokerCapital
+
+	// Baseline without any winnings = fiat + min(crypto) + min(broker)
+	baselineCryptoMin := goals.BaselineCryptoBalance
+	if goals.BaselineCryptoCapital < baselineCryptoMin {
+		baselineCryptoMin = goals.BaselineCryptoCapital
+	}
+	baselineBrokerMin := goals.BaselineBrokerBalance
+	if goals.BaselineBrokerCapital < baselineBrokerMin {
+		baselineBrokerMin = goals.BaselineBrokerCapital
+	}
+	progress.BaselineWithoutWinnings = goals.BaselineFiatBalance + baselineCryptoMin + baselineBrokerMin
+
+	// Calculate current net worth values
+	progress.CurrentNetWorth = netWorth.TotalRealNetWorth
+
+	// Current without broker winnings = fiat + crypto real + broker capital
+	progress.CurrentWithoutBrokerWinnings = netWorth.TotalFiatBalance + netWorth.CryptoBalance + netWorth.BrokerCapital
+
+	// Current without any winnings = fiat + min(crypto) + min(broker)
+	currentCryptoMin := netWorth.CryptoBalance
+	if netWorth.CryptoCapital < currentCryptoMin {
+		currentCryptoMin = netWorth.CryptoCapital
+	}
+	currentBrokerMin := netWorth.BrokerBalance
+	if netWorth.BrokerCapital < currentBrokerMin {
+		currentBrokerMin = netWorth.BrokerCapital
+	}
+	progress.CurrentWithoutWinnings = netWorth.TotalFiatBalance + currentCryptoMin + currentBrokerMin
+
+	// Calculate savings (current - baseline)
+	progress.SavedThisYear = progress.CurrentNetWorth - progress.BaselineNetWorth
+	progress.SavedWithoutBrokerWinnings = progress.CurrentWithoutBrokerWinnings - progress.BaselineWithoutBrokerWinnings
+	progress.SavedWithoutWinnings = progress.CurrentWithoutWinnings - progress.BaselineWithoutWinnings
+
+	// Calculate remaining to goal
+	progress.Remaining = goals.SavingsGoal - progress.SavedThisYear
+	progress.RemainingWithoutBroker = goals.SavingsGoal - progress.SavedWithoutBrokerWinnings
+	progress.RemainingWithoutWinnings = goals.SavingsGoal - progress.SavedWithoutWinnings
+
+	// Calculate percentage (handle zero goal)
+	if goals.SavingsGoal > 0 {
+		progress.Percentage = (progress.SavedThisYear / goals.SavingsGoal) * 100
+		progress.PercentageWithoutBroker = (progress.SavedWithoutBrokerWinnings / goals.SavingsGoal) * 100
+		progress.PercentageWithoutWinnings = (progress.SavedWithoutWinnings / goals.SavingsGoal) * 100
+	}
+
+	return progress
 }
 
 // CalculateNetWorthSnapshot calculates current net worth from accounts
@@ -1174,6 +1255,178 @@ func GetBudgets() ([]types.BudgetByCategory, error) {
 	return results, nil
 }
 
+// GetBudgetHistory returns monthly budget breakdown for a year
+func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.BudgetHistoryResponse{}, err
+	}
+
+	ctx := context.Background()
+	response := types.BudgetHistoryResponse{Year: year, Months: []types.BudgetHistoryMonth{}}
+
+	// Get all categories with their budgets
+	type categoryBudget struct {
+		CategoryId   int32
+		CategoryName string
+		Budget       float64
+	}
+	var categories []categoryBudget
+
+	rows, err := pool.Query(ctx,
+		`SELECT c.id, c.name, COALESCE(b.amount, 0) as budget
+		 FROM categories c
+		 LEFT JOIN budgets b ON c.id = b.category_id
+		 ORDER BY c.name`,
+	)
+	if err != nil {
+		return types.BudgetHistoryResponse{}, fmt.Errorf("error querying categories: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cb categoryBudget
+		if err := rows.Scan(&cb.CategoryId, &cb.CategoryName, &cb.Budget); err != nil {
+			return types.BudgetHistoryResponse{}, fmt.Errorf("error scanning category: %w", err)
+		}
+		categories = append(categories, cb)
+	}
+	rows.Close()
+
+	// For each month 1-12, get spending data
+	for month := 1; month <= 12; month++ {
+		monthData := types.BudgetHistoryMonth{
+			Month:      month,
+			Categories: []types.BudgetHistoryCategory{},
+		}
+
+		// Get total income for this month
+		err = pool.QueryRow(ctx,
+			`SELECT COALESCE(SUM(amount), 0) FROM incomes 
+			 WHERE EXTRACT(YEAR FROM created_at) = $1 AND EXTRACT(MONTH FROM created_at) = $2`,
+			year, month,
+		).Scan(&monthData.TotalIncome)
+		if err != nil {
+			return types.BudgetHistoryResponse{}, fmt.Errorf("error getting monthly income: %w", err)
+		}
+
+		// Get total expenses for this month
+		err = pool.QueryRow(ctx,
+			`SELECT COALESCE(SUM(expense), 0) FROM expenses 
+			 WHERE EXTRACT(YEAR FROM created_at) = $1 AND EXTRACT(MONTH FROM created_at) = $2`,
+			year, month,
+		).Scan(&monthData.TotalExpenses)
+		if err != nil {
+			return types.BudgetHistoryResponse{}, fmt.Errorf("error getting monthly expenses: %w", err)
+		}
+
+		// Get spending per category for this month
+		spendingByCategory := make(map[int32]float64)
+		expRows, err := pool.Query(ctx,
+			`SELECT category_id, COALESCE(SUM(expense), 0) as spent
+			 FROM expenses
+			 WHERE EXTRACT(YEAR FROM created_at) = $1 
+			   AND EXTRACT(MONTH FROM created_at) = $2
+			   AND category_id IS NOT NULL
+			 GROUP BY category_id`,
+			year, month,
+		)
+		if err != nil {
+			return types.BudgetHistoryResponse{}, fmt.Errorf("error getting spending by category: %w", err)
+		}
+
+		for expRows.Next() {
+			var catId int32
+			var spent float64
+			if err := expRows.Scan(&catId, &spent); err != nil {
+				expRows.Close()
+				return types.BudgetHistoryResponse{}, fmt.Errorf("error scanning spending: %w", err)
+			}
+			spendingByCategory[catId] = spent
+		}
+		expRows.Close()
+
+		// Build category breakdown
+		for _, cat := range categories {
+			spent := spendingByCategory[cat.CategoryId]
+			
+			bhc := types.BudgetHistoryCategory{
+				CategoryId:   cat.CategoryId,
+				CategoryName: cat.CategoryName,
+				Budget:       cat.Budget,
+				Spent:        spent,
+				Difference:   cat.Budget - spent, // positive = under budget
+			}
+
+			// Calculate percentages
+			if monthData.TotalExpenses > 0 {
+				bhc.PctOfExpenses = (spent / monthData.TotalExpenses) * 100
+			}
+			if monthData.TotalIncome > 0 {
+				bhc.PctOfIncome = (spent / monthData.TotalIncome) * 100
+			}
+
+			monthData.Categories = append(monthData.Categories, bhc)
+		}
+
+		response.Months = append(response.Months, monthData)
+	}
+
+	// Calculate yearly totals
+	yearlyTotals := types.BudgetHistoryYearlyTotals{
+		Categories: []types.BudgetHistoryYearlyCategory{},
+	}
+
+	// Aggregate from monthly data
+	yearlySpendingByCategory := make(map[int32]float64)
+	for _, month := range response.Months {
+		yearlyTotals.TotalExpenses += month.TotalExpenses
+		yearlyTotals.TotalIncome += month.TotalIncome
+		for _, cat := range month.Categories {
+			yearlySpendingByCategory[cat.CategoryId] += cat.Spent
+		}
+	}
+
+	// Calculate yearly budget (monthly budget * 12)
+	for _, cat := range categories {
+		yearlyTotals.TotalBudget += cat.Budget * 12
+	}
+	yearlyTotals.Difference = yearlyTotals.TotalBudget - yearlyTotals.TotalExpenses
+
+	// Calculate savings rate
+	if yearlyTotals.TotalIncome > 0 {
+		yearlyTotals.SavingsRate = ((yearlyTotals.TotalIncome - yearlyTotals.TotalExpenses) / yearlyTotals.TotalIncome) * 100
+	}
+
+	// Build yearly category breakdown
+	for _, cat := range categories {
+		totalSpent := yearlySpendingByCategory[cat.CategoryId]
+		yearlyBudget := cat.Budget * 12
+
+		yhc := types.BudgetHistoryYearlyCategory{
+			CategoryId:    cat.CategoryId,
+			CategoryName:  cat.CategoryName,
+			YearlyBudget:  yearlyBudget,
+			TotalSpent:    totalSpent,
+			Difference:    yearlyBudget - totalSpent,
+		}
+
+		// Calculate percentages
+		if yearlyTotals.TotalExpenses > 0 {
+			yhc.PctOfExpenses = (totalSpent / yearlyTotals.TotalExpenses) * 100
+		}
+		if yearlyTotals.TotalIncome > 0 {
+			yhc.PctOfIncome = (totalSpent / yearlyTotals.TotalIncome) * 100
+		}
+
+		yearlyTotals.Categories = append(yearlyTotals.Categories, yhc)
+	}
+
+	response.YearlyTotals = yearlyTotals
+
+	return response, nil
+}
+
 // ========== DEBTORS ==========
 
 // GetDebtors retrieves all debtors
@@ -1503,10 +1756,10 @@ func InsertBudgetsIntoDatabase(budgets []types.Budget) ([]types.Budget, error) {
 	for _, b := range budgets {
 		var result types.Budget
 		err := pool.QueryRow(ctx,
-			`INSERT INTO budgets (category_id, budget)
+			`INSERT INTO budgets (category_id, amount)
 			 VALUES ($1, $2)
-			 ON CONFLICT (category_id) DO UPDATE SET budget = EXCLUDED.budget
-			 RETURNING id, category_id, budget`,
+			 ON CONFLICT (category_id) DO UPDATE SET amount = EXCLUDED.amount
+			 RETURNING id, category_id, amount`,
 			b.CategoryId, b.Amount,
 		).Scan(&result.Id, &result.CategoryId, &result.Amount)
 

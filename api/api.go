@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	googleSS "github.com/carlosdimatteo/fintrack-backend-go/adapters/google"
@@ -13,6 +15,112 @@ import (
 	types "github.com/carlosdimatteo/fintrack-backend-go/types"
 	"github.com/gorilla/mux"
 )
+
+// Security middleware configuration
+var (
+	apiKey         string
+	allowedOrigins []string
+)
+
+func init() {
+	// Load API key from environment
+	apiKey = os.Getenv("API_KEY")
+	if apiKey == "" {
+		log.Println("WARNING: API_KEY not set - API is unprotected!")
+	}
+
+	// Load allowed origins (comma-separated)
+	originsEnv := os.Getenv("ALLOWED_ORIGINS")
+	if originsEnv != "" {
+		allowedOrigins = strings.Split(originsEnv, ",")
+		for i := range allowedOrigins {
+			allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+		}
+	} else {
+		// Default: allow all in dev mode
+		allowedOrigins = []string{"*"}
+		log.Println("WARNING: ALLOWED_ORIGINS not set - allowing all origins")
+	}
+}
+
+// corsMiddleware handles CORS headers and preflight requests
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		allowed := false
+
+		// Check if origin is allowed
+		for _, o := range allowedOrigins {
+			if o == "*" || o == origin {
+				allowed = true
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				break
+			}
+		}
+
+		if !allowed && origin != "" {
+			// Origin not allowed
+			http.Error(w, "Origin not allowed", http.StatusForbidden)
+			return
+		}
+
+		// If no origin (same-origin request), allow it
+		if origin == "" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key, Authorization")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		// Handle preflight
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// apiKeyMiddleware validates the API key
+func apiKeyMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for OPTIONS (preflight)
+		if r.Method == "OPTIONS" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Skip auth if no API key is configured (dev mode)
+		if apiKey == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check X-API-Key header
+		providedKey := r.Header.Get("X-API-Key")
+		if providedKey == "" {
+			// Also check Authorization: Bearer <key>
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				providedKey = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
+		if providedKey != apiKey {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(types.Response{
+				Success: false,
+				Message: "Invalid or missing API key",
+			})
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
 
 func greet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -205,6 +313,34 @@ func setBudgets(w http.ResponseWriter, r *http.Request) {
 	}()
 
 }
+
+func getBudgetHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	// Get year from query param, default to current year
+	year := time.Now().Year()
+	yearStr := r.URL.Query().Get("year")
+	if yearStr != "" {
+		if y, err := strconv.Atoi(yearStr); err == nil && y >= 2000 && y <= 2100 {
+			year = y
+		}
+	}
+
+	history, err := postgres.GetBudgetHistory(year)
+	if err != nil {
+		log.Printf("Error getting budget history: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
+}
+
 func getConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -986,9 +1122,10 @@ type DashboardResponse struct {
 		InvestmentDeposits float64 `json:"investment_deposits"`
 		Savings            float64 `json:"savings"`
 	} `json:"ytd"`
-	Goals       types.YearlyGoals                `json:"goals"`
-	NetWorth    types.NetWorthSnapshot           `json:"net_worth"`
-	Investments []types.InvestmentAccountSummary `json:"investments"`
+	Goals           types.YearlyGoals                `json:"goals"`
+	NetWorth        types.NetWorthSnapshot           `json:"net_worth"`
+	Investments     []types.InvestmentAccountSummary `json:"investments"`
+	SavingsProgress types.SavingsProgress            `json:"savings_progress"`
 }
 
 func getDashboard(w http.ResponseWriter, r *http.Request) {
@@ -1073,6 +1210,25 @@ func getDashboard(w http.ResponseWriter, r *http.Request) {
 	// Get investment summary (current state - not historical)
 	investments, _ := postgres.GetInvestmentAccountSummary()
 	dashboard.Investments = investments
+
+	// Calculate savings progress
+	// For current year: use live calculated net worth
+	// For past years: use December snapshot of that year (end of year state)
+	var progressNetWorth types.NetWorthSnapshot
+	if year == currentYear {
+		// Current year - calculate live
+		progressNetWorth, _ = postgres.CalculateNetWorthSnapshot(year, int(time.Now().Month()))
+	} else {
+		// Historical year - use December snapshot (year-end state)
+		storedSnapshot, found, err := postgres.GetNetWorthSnapshot(year, 12)
+		if err == nil && found {
+			progressNetWorth = storedSnapshot
+		} else {
+			// No December snapshot - try to calculate (won't be accurate for historical)
+			progressNetWorth, _ = postgres.CalculateNetWorthSnapshot(year, 12)
+		}
+	}
+	dashboard.SavingsProgress = postgres.CalculateSavingsProgress(dashboard.Goals, progressNetWorth)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(dashboard)
@@ -1494,6 +1650,7 @@ func LoadRoutes(muxRouter *mux.Router) {
 	api.HandleFunc("/expenses", getExpenses).Methods("GET", "OPTIONS")
 	api.HandleFunc("/budget", setBudgets).Methods("POST", "OPTIONS")
 	api.HandleFunc("/budget", getBudgets).Methods("GET")
+	api.HandleFunc("/budget/history", getBudgetHistory).Methods("GET")
 	api.HandleFunc("/categories", getCategories).Methods("GET")
 	api.HandleFunc("/config", getConfig).Methods("GET")
 	api.HandleFunc("/config", setConfig).Methods("POST", "OPTIONS")
@@ -1556,4 +1713,11 @@ func ServerErrorResponse(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
+}
+
+// WithMiddleware wraps the router with CORS and API key middleware
+func WithMiddleware(handler http.Handler) http.Handler {
+	// Apply middleware in order: CORS first, then API key
+	// This ensures preflight requests get proper CORS headers before auth check
+	return corsMiddleware(apiKeyMiddleware(handler))
 }
