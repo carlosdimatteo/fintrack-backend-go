@@ -979,6 +979,21 @@ func getDashboard(w http.ResponseWriter, r *http.Request) {
 	year := now.Year()
 	month := int(now.Month())
 
+	// Allow querying for specific year/month via query params
+	yearStr := r.URL.Query().Get("year")
+	monthStr := r.URL.Query().Get("month")
+
+	if yearStr != "" {
+		if y, err := strconv.Atoi(yearStr); err == nil && y >= 2000 && y <= 2100 {
+			year = y
+		}
+	}
+	if monthStr != "" {
+		if m, err := strconv.Atoi(monthStr); err == nil && m >= 1 && m <= 12 {
+			month = m
+		}
+	}
+
 	var dashboard DashboardResponse
 	dashboard.CurrentMonth.Year = year
 	dashboard.CurrentMonth.Month = month
@@ -1001,22 +1016,38 @@ func getDashboard(w http.ResponseWriter, r *http.Request) {
 		dashboard.CurrentMonth.SavingsRate = (dashboard.CurrentMonth.Savings / monthIncome) * 100
 	}
 
-	// Get YTD totals
+	// Get YTD totals (for the specified year)
 	ytdIncome, ytdExpenses, ytdInvestments := postgres.GetYTDTotals(year)
 	dashboard.YTD.Income = ytdIncome
 	dashboard.YTD.Expenses = ytdExpenses
 	dashboard.YTD.InvestmentDeposits = ytdInvestments
 	dashboard.YTD.Savings = ytdIncome - ytdExpenses - ytdInvestments
 
-	// Get goals
+	// Get goals for the specified year
 	goals, _ := postgres.GetYearlyGoals(year)
 	dashboard.Goals = goals
 
-	// Get latest net worth snapshot
-	snapshot, _ := postgres.CalculateNetWorthSnapshot(year, month)
-	dashboard.NetWorth = snapshot
+	// Get net worth snapshot for the specified month
+	// For historical months, use stored snapshot; for current month, calculate live
+	currentYear := time.Now().Year()
+	currentMonth := int(time.Now().Month())
 
-	// Get investment summary
+	if year == currentYear && month == currentMonth {
+		// Current month - calculate live
+		snapshot, _ := postgres.CalculateNetWorthSnapshot(year, month)
+		dashboard.NetWorth = snapshot
+	} else {
+		// Historical - try to get stored snapshot
+		storedSnapshot, found, err := postgres.GetNetWorthSnapshot(year, month)
+		if err == nil && found {
+			dashboard.NetWorth = storedSnapshot
+		} else {
+			// No stored snapshot - return empty with year/month set
+			dashboard.NetWorth = types.NetWorthSnapshot{Year: year, Month: month}
+		}
+	}
+
+	// Get investment summary (current state - not historical)
 	investments, _ := postgres.GetInvestmentAccountSummary()
 	dashboard.Investments = investments
 

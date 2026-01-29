@@ -185,17 +185,17 @@ type InvestmentAccountSummary struct {
 
 // InvestmentAccountExpectedCapital shows the breakdown of capital calculation
 type InvestmentAccountExpectedCapital struct {
-	Id              int32   `json:"id"`
-	Name            string  `json:"name"`
-	Type            string  `json:"type"`
-	Currency        string  `json:"currency"`
-	StartingCapital float64 `json:"starting_capital"`
-	TotalDeposits   float64 `json:"total_deposits"`
+	Id               int32   `json:"id"`
+	Name             string  `json:"name"`
+	Type             string  `json:"type"`
+	Currency         string  `json:"currency"`
+	StartingCapital  float64 `json:"starting_capital"`
+	TotalDeposits    float64 `json:"total_deposits"`
 	TotalWithdrawals float64 `json:"total_withdrawals"`
-	TotalExpenses   float64 `json:"total_expenses"`
-	ExpectedCapital float64 `json:"expected_capital"`
-	RealBalance     float64 `json:"real_balance"`
-	Discrepancy     float64 `json:"discrepancy"` // real_balance - expected_capital = PnL
+	TotalExpenses    float64 `json:"total_expenses"`
+	ExpectedCapital  float64 `json:"expected_capital"`
+	RealBalance      float64 `json:"real_balance"`
+	Discrepancy      float64 `json:"discrepancy"` // real_balance - expected_capital = PnL
 }
 
 // YearlyGoals represents annual financial goals (Phase 4)
@@ -210,11 +210,11 @@ type YearlyGoals struct {
 
 // NetWorthSnapshot represents a monthly snapshot of net worth (Phase 4)
 type NetWorthSnapshot struct {
-	Id                     int32     `json:"id,omitempty"`
-	CreatedAt              time.Time `json:"created_at,omitempty"`
-	Date                   time.Time `json:"date"`
-	Year                   int       `json:"year"`
-	Month                  int       `json:"month"`
+	Id        int32     `json:"id,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	Date      time.Time `json:"date"`
+	Year      int       `json:"year"`
+	Month     int       `json:"month"`
 	// Real balances (from accounting/reconciliation)
 	TotalFiatBalance       float64 `json:"total_fiat_balance"`
 	CryptoBalance          float64 `json:"crypto_balance"`
@@ -229,8 +229,8 @@ type NetWorthSnapshot struct {
 	ExpectedFiatBalance float64 `json:"expected_fiat_balance"`
 	ExpectedNetWorth    float64 `json:"expected_net_worth"`
 	// Discrepancy
-	FiatDiscrepancy     float64 `json:"fiat_discrepancy"`
-	TotalDiscrepancy    float64 `json:"total_discrepancy"`
+	FiatDiscrepancy  float64 `json:"fiat_discrepancy"`
+	TotalDiscrepancy float64 `json:"total_discrepancy"`
 	// Percentages
 	FiatPercent   float64 `json:"fiat_percent"`
 	CryptoPercent float64 `json:"crypto_percent"`

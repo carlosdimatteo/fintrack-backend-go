@@ -547,6 +547,41 @@ func UpsertNetWorthSnapshot(snapshot types.NetWorthSnapshot) (types.NetWorthSnap
 }
 
 // GetNetWorthHistory retrieves all snapshots ordered by date
+// GetNetWorthSnapshot retrieves a specific stored snapshot by year/month
+func GetNetWorthSnapshot(year int, month int) (types.NetWorthSnapshot, bool, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.NetWorthSnapshot{}, false, err
+	}
+
+	var s types.NetWorthSnapshot
+	err = pool.QueryRow(context.Background(),
+		`SELECT id, created_at, date, year, month, total_fiat_balance,
+			crypto_balance, crypto_capital, broker_balance, broker_capital,
+			total_investment_balance, total_investment_capital,
+			total_real_net_worth, total_pnl,
+			COALESCE(expected_fiat_balance, 0), COALESCE(expected_net_worth, 0),
+			COALESCE(fiat_discrepancy, 0), COALESCE(total_discrepancy, 0),
+			fiat_percent, crypto_percent, broker_percent
+		 FROM net_worth_snapshots WHERE year = $1 AND month = $2`,
+		year, month,
+	).Scan(&s.Id, &s.CreatedAt, &s.Date, &s.Year, &s.Month,
+		&s.TotalFiatBalance, &s.CryptoBalance, &s.CryptoCapital,
+		&s.BrokerBalance, &s.BrokerCapital, &s.TotalInvestmentBalance,
+		&s.TotalInvestmentCapital, &s.TotalRealNetWorth, &s.TotalPnL,
+		&s.ExpectedFiatBalance, &s.ExpectedNetWorth, &s.FiatDiscrepancy, &s.TotalDiscrepancy,
+		&s.FiatPercent, &s.CryptoPercent, &s.BrokerPercent)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return types.NetWorthSnapshot{}, false, nil // Not found
+		}
+		return types.NetWorthSnapshot{}, false, fmt.Errorf("error querying snapshot: %w", err)
+	}
+
+	return s, true, nil
+}
+
 func GetNetWorthHistory() ([]types.NetWorthSnapshot, error) {
 	pool, err := GetPool()
 	if err != nil {
