@@ -198,18 +198,26 @@ type NetWorthSnapshot struct {
 	Date                   time.Time `json:"date"`
 	Year                   int       `json:"year"`
 	Month                  int       `json:"month"`
-	TotalFiatBalance       float64   `json:"total_fiat_balance"`
-	CryptoBalance          float64   `json:"crypto_balance"`
-	CryptoCapital          float64   `json:"crypto_capital"`
-	BrokerBalance          float64   `json:"broker_balance"`
-	BrokerCapital          float64   `json:"broker_capital"`
-	TotalInvestmentBalance float64   `json:"total_investment_balance"`
-	TotalInvestmentCapital float64   `json:"total_investment_capital"`
-	TotalNetWorth          float64   `json:"total_net_worth"`
-	TotalPnL               float64   `json:"total_pnl"`
-	FiatPercent            float64   `json:"fiat_percent"`
-	CryptoPercent          float64   `json:"crypto_percent"`
-	BrokerPercent          float64   `json:"broker_percent"`
+	// Real balances (from accounting/reconciliation)
+	TotalFiatBalance       float64 `json:"total_fiat_balance"`
+	CryptoBalance          float64 `json:"crypto_balance"`
+	CryptoCapital          float64 `json:"crypto_capital"`
+	BrokerBalance          float64 `json:"broker_balance"`
+	BrokerCapital          float64 `json:"broker_capital"`
+	TotalInvestmentBalance float64 `json:"total_investment_balance"`
+	TotalInvestmentCapital float64 `json:"total_investment_capital"`
+	TotalRealNetWorth      float64 `json:"total_real_net_worth"`
+	TotalPnL               float64 `json:"total_pnl"`
+	// Expected balances (from transactions)
+	ExpectedFiatBalance float64 `json:"expected_fiat_balance"`
+	ExpectedNetWorth    float64 `json:"expected_net_worth"`
+	// Discrepancy
+	FiatDiscrepancy     float64 `json:"fiat_discrepancy"`
+	TotalDiscrepancy    float64 `json:"total_discrepancy"`
+	// Percentages
+	FiatPercent   float64 `json:"fiat_percent"`
+	CryptoPercent float64 `json:"crypto_percent"`
+	BrokerPercent float64 `json:"broker_percent"`
 }
 
 var ConfigType map[string]string

@@ -430,8 +430,10 @@ func UpsertNetWorthSnapshot(snapshot types.NetWorthSnapshot) (types.NetWorthSnap
 			date, year, month, total_fiat_balance,
 			crypto_balance, crypto_capital, broker_balance, broker_capital,
 			total_investment_balance, total_investment_capital,
-			total_net_worth, total_pnl, fiat_percent, crypto_percent, broker_percent
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			total_real_net_worth, total_pnl,
+			expected_fiat_balance, expected_net_worth, fiat_discrepancy, total_discrepancy,
+			fiat_percent, crypto_percent, broker_percent
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		ON CONFLICT (year, month) DO UPDATE SET
 			date = EXCLUDED.date,
 			total_fiat_balance = EXCLUDED.total_fiat_balance,
@@ -441,23 +443,33 @@ func UpsertNetWorthSnapshot(snapshot types.NetWorthSnapshot) (types.NetWorthSnap
 			broker_capital = EXCLUDED.broker_capital,
 			total_investment_balance = EXCLUDED.total_investment_balance,
 			total_investment_capital = EXCLUDED.total_investment_capital,
-			total_net_worth = EXCLUDED.total_net_worth,
+			total_real_net_worth = EXCLUDED.total_real_net_worth,
 			total_pnl = EXCLUDED.total_pnl,
+			expected_fiat_balance = EXCLUDED.expected_fiat_balance,
+			expected_net_worth = EXCLUDED.expected_net_worth,
+			fiat_discrepancy = EXCLUDED.fiat_discrepancy,
+			total_discrepancy = EXCLUDED.total_discrepancy,
 			fiat_percent = EXCLUDED.fiat_percent,
 			crypto_percent = EXCLUDED.crypto_percent,
 			broker_percent = EXCLUDED.broker_percent
 		RETURNING id, created_at, date, year, month, total_fiat_balance,
 			crypto_balance, crypto_capital, broker_balance, broker_capital,
 			total_investment_balance, total_investment_capital,
-			total_net_worth, total_pnl, fiat_percent, crypto_percent, broker_percent`,
+			total_real_net_worth, total_pnl,
+			COALESCE(expected_fiat_balance, 0), COALESCE(expected_net_worth, 0),
+			COALESCE(fiat_discrepancy, 0), COALESCE(total_discrepancy, 0),
+			fiat_percent, crypto_percent, broker_percent`,
 		snapshot.Date, snapshot.Year, snapshot.Month, snapshot.TotalFiatBalance,
 		snapshot.CryptoBalance, snapshot.CryptoCapital, snapshot.BrokerBalance, snapshot.BrokerCapital,
 		snapshot.TotalInvestmentBalance, snapshot.TotalInvestmentCapital,
-		snapshot.TotalNetWorth, snapshot.TotalPnL, snapshot.FiatPercent, snapshot.CryptoPercent, snapshot.BrokerPercent,
+		snapshot.TotalRealNetWorth, snapshot.TotalPnL,
+		snapshot.ExpectedFiatBalance, snapshot.ExpectedNetWorth, snapshot.FiatDiscrepancy, snapshot.TotalDiscrepancy,
+		snapshot.FiatPercent, snapshot.CryptoPercent, snapshot.BrokerPercent,
 	).Scan(&result.Id, &result.CreatedAt, &result.Date, &result.Year, &result.Month,
 		&result.TotalFiatBalance, &result.CryptoBalance, &result.CryptoCapital,
 		&result.BrokerBalance, &result.BrokerCapital, &result.TotalInvestmentBalance,
-		&result.TotalInvestmentCapital, &result.TotalNetWorth, &result.TotalPnL,
+		&result.TotalInvestmentCapital, &result.TotalRealNetWorth, &result.TotalPnL,
+		&result.ExpectedFiatBalance, &result.ExpectedNetWorth, &result.FiatDiscrepancy, &result.TotalDiscrepancy,
 		&result.FiatPercent, &result.CryptoPercent, &result.BrokerPercent)
 
 	if err != nil {
@@ -478,7 +490,10 @@ func GetNetWorthHistory() ([]types.NetWorthSnapshot, error) {
 		`SELECT id, created_at, date, year, month, total_fiat_balance,
 			crypto_balance, crypto_capital, broker_balance, broker_capital,
 			total_investment_balance, total_investment_capital,
-			total_net_worth, total_pnl, fiat_percent, crypto_percent, broker_percent
+			total_real_net_worth, total_pnl,
+			COALESCE(expected_fiat_balance, 0), COALESCE(expected_net_worth, 0),
+			COALESCE(fiat_discrepancy, 0), COALESCE(total_discrepancy, 0),
+			fiat_percent, crypto_percent, broker_percent
 		 FROM net_worth_snapshots ORDER BY year, month`,
 	)
 	if err != nil {
@@ -492,7 +507,8 @@ func GetNetWorthHistory() ([]types.NetWorthSnapshot, error) {
 		if err := rows.Scan(&s.Id, &s.CreatedAt, &s.Date, &s.Year, &s.Month,
 			&s.TotalFiatBalance, &s.CryptoBalance, &s.CryptoCapital,
 			&s.BrokerBalance, &s.BrokerCapital, &s.TotalInvestmentBalance,
-			&s.TotalInvestmentCapital, &s.TotalNetWorth, &s.TotalPnL,
+			&s.TotalInvestmentCapital, &s.TotalRealNetWorth, &s.TotalPnL,
+			&s.ExpectedFiatBalance, &s.ExpectedNetWorth, &s.FiatDiscrepancy, &s.TotalDiscrepancy,
 			&s.FiatPercent, &s.CryptoPercent, &s.BrokerPercent); err != nil {
 			return nil, fmt.Errorf("error scanning row: %w", err)
 		}
@@ -515,16 +531,27 @@ func CalculateNetWorthSnapshot(year int, month int) (types.NetWorthSnapshot, err
 		Month: month,
 	}
 
-	// Get fiat accounts total
-	err = pool.QueryRow(context.Background(),
+	ctx := context.Background()
+
+	// Get real fiat balance (from accounting)
+	err = pool.QueryRow(ctx,
 		`SELECT COALESCE(SUM(balance), 0) FROM accounts`,
 	).Scan(&snapshot.TotalFiatBalance)
 	if err != nil {
 		return types.NetWorthSnapshot{}, fmt.Errorf("error getting fiat balance: %w", err)
 	}
 
+	// Get expected fiat balance (from transactions via account_expected_balance view)
+	err = pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(expected_balance), 0) FROM account_expected_balance`,
+	).Scan(&snapshot.ExpectedFiatBalance)
+	if err != nil {
+		// View might not exist yet, default to 0
+		snapshot.ExpectedFiatBalance = 0
+	}
+
 	// Get crypto accounts (type = 'Crypto')
-	err = pool.QueryRow(context.Background(),
+	err = pool.QueryRow(ctx,
 		`SELECT COALESCE(SUM(balance), 0), COALESCE(SUM(capital), 0) 
 		 FROM investment_accounts WHERE type = 'Crypto'`,
 	).Scan(&snapshot.CryptoBalance, &snapshot.CryptoCapital)
@@ -533,7 +560,7 @@ func CalculateNetWorthSnapshot(year int, month int) (types.NetWorthSnapshot, err
 	}
 
 	// Get broker accounts (type = 'Broker')
-	err = pool.QueryRow(context.Background(),
+	err = pool.QueryRow(ctx,
 		`SELECT COALESCE(SUM(balance), 0), COALESCE(SUM(capital), 0) 
 		 FROM investment_accounts WHERE type = 'Broker'`,
 	).Scan(&snapshot.BrokerBalance, &snapshot.BrokerCapital)
@@ -544,14 +571,21 @@ func CalculateNetWorthSnapshot(year int, month int) (types.NetWorthSnapshot, err
 	// Calculate totals
 	snapshot.TotalInvestmentBalance = snapshot.CryptoBalance + snapshot.BrokerBalance
 	snapshot.TotalInvestmentCapital = snapshot.CryptoCapital + snapshot.BrokerCapital
-	snapshot.TotalNetWorth = snapshot.TotalFiatBalance + snapshot.TotalInvestmentBalance
+	snapshot.TotalRealNetWorth = snapshot.TotalFiatBalance + snapshot.TotalInvestmentBalance
 	snapshot.TotalPnL = snapshot.TotalInvestmentBalance - snapshot.TotalInvestmentCapital
 
-	// Calculate percentages
-	if snapshot.TotalNetWorth > 0 {
-		snapshot.FiatPercent = (snapshot.TotalFiatBalance / snapshot.TotalNetWorth) * 100
-		snapshot.CryptoPercent = (snapshot.CryptoBalance / snapshot.TotalNetWorth) * 100
-		snapshot.BrokerPercent = (snapshot.BrokerBalance / snapshot.TotalNetWorth) * 100
+	// Expected net worth = expected fiat + real investment balances (investments are always real from reconciliation)
+	snapshot.ExpectedNetWorth = snapshot.ExpectedFiatBalance + snapshot.TotalInvestmentBalance
+
+	// Calculate discrepancies
+	snapshot.FiatDiscrepancy = snapshot.TotalFiatBalance - snapshot.ExpectedFiatBalance
+	snapshot.TotalDiscrepancy = snapshot.TotalRealNetWorth - snapshot.ExpectedNetWorth
+
+	// Calculate percentages (based on real net worth)
+	if snapshot.TotalRealNetWorth > 0 {
+		snapshot.FiatPercent = (snapshot.TotalFiatBalance / snapshot.TotalRealNetWorth) * 100
+		snapshot.CryptoPercent = (snapshot.CryptoBalance / snapshot.TotalRealNetWorth) * 100
+		snapshot.BrokerPercent = (snapshot.BrokerBalance / snapshot.TotalRealNetWorth) * 100
 	}
 
 	return snapshot, nil
@@ -735,6 +769,147 @@ func InsertDebt(debt types.Debt) (types.Debt, error) {
 	return result, nil
 }
 
+// GetDebts retrieves debts with optional filters
+func GetDebts(limit int, offset int, debtorId *int32) ([]types.Debt, int, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	ctx := context.Background()
+
+	// Build query based on filters
+	countQuery := `SELECT COUNT(*) FROM debts`
+	selectQuery := `SELECT id, description, amount, debtor_id, debtor_name, date, created_at, 
+		original_amount, currency, outbound, account_id, expense_id, income_id FROM debts`
+
+	var args []interface{}
+	argIndex := 1
+
+	if debtorId != nil {
+		countQuery += fmt.Sprintf(" WHERE debtor_id = $%d", argIndex)
+		selectQuery += fmt.Sprintf(" WHERE debtor_id = $%d", argIndex)
+		args = append(args, *debtorId)
+		argIndex++
+	}
+
+	selectQuery += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
+
+	// Get total count
+	var count int
+	if len(args) > 0 {
+		err = pool.QueryRow(ctx, countQuery, args...).Scan(&count)
+	} else {
+		err = pool.QueryRow(ctx, countQuery).Scan(&count)
+	}
+	if err != nil {
+		return nil, 0, fmt.Errorf("error counting debts: %w", err)
+	}
+
+	// Add pagination args
+	args = append(args, limit, offset)
+
+	// Get paginated results
+	rows, err := pool.Query(ctx, selectQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("error querying debts: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.Debt
+	for rows.Next() {
+		var d types.Debt
+		if err := rows.Scan(&d.Id, &d.Description, &d.Amount, &d.DebtorId, &d.DebtorName,
+			&d.Date, &d.CreatedAt, &d.OriginalAmount, &d.Currency, &d.Outbound,
+			&d.AccountId, &d.ExpenseId, &d.IncomeId); err != nil {
+			return nil, 0, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, d)
+	}
+
+	return results, count, nil
+}
+
+// GetRecentExpenses retrieves recent expenses for linking to debts
+func GetRecentExpenses(limit int) ([]types.Expense, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, date, category, category_id, expense, description, method, "originalAmount", account_id, account_type 
+		 FROM expenses ORDER BY created_at DESC LIMIT $1`,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error querying recent expenses: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.Expense
+	for rows.Next() {
+		var e types.Expense
+		if err := rows.Scan(&e.Id, &e.Date, &e.Category, &e.CategoryId, &e.Expense,
+			&e.Description, &e.Method, &e.OriginalAmount, &e.AccountId, &e.AccountType); err != nil {
+			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, e)
+	}
+
+	return results, nil
+}
+
+// RecordDebtRepayment creates an income record and a corresponding debt record in one transaction
+func RecordDebtRepayment(income types.Income, debt types.Debt) (types.Income, types.Debt, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.Income{}, types.Debt{}, err
+	}
+
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return types.Income{}, types.Debt{}, fmt.Errorf("error starting transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Insert income
+	var incomeResult types.Income
+	err = tx.QueryRow(ctx,
+		`INSERT INTO incomes (date, amount, description, account_id, account_name)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, date, amount, description, account_id, account_name, created_at`,
+		income.Date, income.Amount, income.Description, income.AccountId, income.AccountName,
+	).Scan(&incomeResult.Id, &incomeResult.Date, &incomeResult.Amount, &incomeResult.Description,
+		&incomeResult.AccountId, &incomeResult.AccountName, &incomeResult.CreatedAt)
+	if err != nil {
+		return types.Income{}, types.Debt{}, fmt.Errorf("error inserting income: %w", err)
+	}
+
+	// Insert debt with income_id reference
+	debt.IncomeId = &incomeResult.Id
+	var debtResult types.Debt
+	err = tx.QueryRow(ctx,
+		`INSERT INTO debts (description, amount, debtor_id, debtor_name, date, original_amount, currency, outbound, account_id, expense_id, income_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 RETURNING id, description, amount, debtor_id, debtor_name, date, created_at, original_amount, currency, outbound`,
+		debt.Description, debt.Amount, debt.DebtorId, debt.DebtorName, debt.Date,
+		debt.OriginalAmount, debt.Currency, debt.Outbound, debt.AccountId, debt.ExpenseId, debt.IncomeId,
+	).Scan(&debtResult.Id, &debtResult.Description, &debtResult.Amount, &debtResult.DebtorId, &debtResult.DebtorName,
+		&debtResult.Date, &debtResult.CreatedAt, &debtResult.OriginalAmount, &debtResult.Currency, &debtResult.Outbound)
+	if err != nil {
+		return types.Income{}, types.Debt{}, fmt.Errorf("error inserting debt: %w", err)
+	}
+	debtResult.IncomeId = debt.IncomeId
+
+	if err := tx.Commit(ctx); err != nil {
+		return types.Income{}, types.Debt{}, fmt.Errorf("error committing transaction: %w", err)
+	}
+
+	return incomeResult, debtResult, nil
+}
+
 // ========== EXPENSES (READ) ==========
 
 // GetExpenses retrieves expenses with pagination
@@ -886,6 +1061,186 @@ func GetConfig() ([]types.Config, error) {
 			return nil, fmt.Errorf("error scanning row: %w", err)
 		}
 		results = append(results, c)
+	}
+
+	return results, nil
+}
+
+// ========== DASHBOARD HELPERS ==========
+
+// GetMonthlyExpenseSum returns total expenses for a given year and month
+func GetMonthlyExpenseSum(year int, month int) (float64, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return 0, err
+	}
+
+	var total float64
+	err = pool.QueryRow(context.Background(),
+		`SELECT COALESCE(SUM(expense), 0) FROM expenses 
+		 WHERE EXTRACT(YEAR FROM created_at) = $1 AND EXTRACT(MONTH FROM created_at) = $2`,
+		year, month,
+	).Scan(&total)
+
+	if err != nil {
+		return 0, fmt.Errorf("error querying monthly expenses: %w", err)
+	}
+
+	return total, nil
+}
+
+// GetMonthlyInvestmentSum returns total investment deposits for a given year and month
+func GetMonthlyInvestmentSum(year int, month int) (float64, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return 0, err
+	}
+
+	var total float64
+	err = pool.QueryRow(context.Background(),
+		`SELECT COALESCE(SUM(CASE WHEN type = 'deposit' THEN amount ELSE 0 END), 0) FROM investments 
+		 WHERE EXTRACT(YEAR FROM created_at) = $1 AND EXTRACT(MONTH FROM created_at) = $2`,
+		year, month,
+	).Scan(&total)
+
+	if err != nil {
+		return 0, fmt.Errorf("error querying monthly investments: %w", err)
+	}
+
+	return total, nil
+}
+
+// GetYTDTotals returns year-to-date totals for income, expenses, and investments
+func GetYTDTotals(year int) (income float64, expenses float64, investments float64) {
+	pool, err := GetPool()
+	if err != nil {
+		return 0, 0, 0
+	}
+
+	ctx := context.Background()
+
+	// Income YTD
+	pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(amount), 0) FROM incomes WHERE EXTRACT(YEAR FROM created_at) = $1`,
+		year,
+	).Scan(&income)
+
+	// Expenses YTD
+	pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(expense), 0) FROM expenses WHERE EXTRACT(YEAR FROM created_at) = $1`,
+		year,
+	).Scan(&expenses)
+
+	// Investments YTD (deposits only)
+	pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(amount), 0) FROM investments WHERE type = 'deposit' AND EXTRACT(YEAR FROM created_at) = $1`,
+		year,
+	).Scan(&investments)
+
+	return income, expenses, investments
+}
+
+// ========== TRANSFERS ==========
+
+// InsertTransfer inserts a transfer record
+func InsertTransfer(transfer types.Transfer) (types.Transfer, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return types.Transfer{}, err
+	}
+
+	// Calculate exchange rate if not provided
+	if transfer.ExchangeRate == 0 && transfer.SourceAmount > 0 {
+		transfer.ExchangeRate = transfer.DestAmount / transfer.SourceAmount
+	}
+
+	var result types.Transfer
+	err = pool.QueryRow(context.Background(),
+		`INSERT INTO transfers (date, description, source_account_id, source_amount, dest_account_id, dest_amount, exchange_rate)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 RETURNING id, created_at, date, description, source_account_id, source_amount, dest_account_id, dest_amount, exchange_rate`,
+		transfer.Date, transfer.Description, transfer.SourceAccountId, transfer.SourceAmount,
+		transfer.DestAccountId, transfer.DestAmount, transfer.ExchangeRate,
+	).Scan(&result.Id, &result.CreatedAt, &result.Date, &result.Description,
+		&result.SourceAccountId, &result.SourceAmount, &result.DestAccountId, &result.DestAmount, &result.ExchangeRate)
+
+	if err != nil {
+		return types.Transfer{}, fmt.Errorf("error inserting transfer: %w", err)
+	}
+
+	return result, nil
+}
+
+// GetTransfers retrieves transfers with pagination
+func GetTransfers(limit int, offset int) ([]types.Transfer, int, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get total count
+	var count int
+	err = pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM transfers`,
+	).Scan(&count)
+	if err != nil {
+		return nil, 0, fmt.Errorf("error counting transfers: %w", err)
+	}
+
+	// Get paginated results
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, created_at, date, COALESCE(description, ''), source_account_id, source_amount, 
+			dest_account_id, dest_amount, COALESCE(exchange_rate, 0)
+		 FROM transfers ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("error querying transfers: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.Transfer
+	for rows.Next() {
+		var t types.Transfer
+		if err := rows.Scan(&t.Id, &t.CreatedAt, &t.Date, &t.Description,
+			&t.SourceAccountId, &t.SourceAmount, &t.DestAccountId, &t.DestAmount, &t.ExchangeRate); err != nil {
+			return nil, 0, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, t)
+	}
+
+	return results, count, nil
+}
+
+// ========== EXPECTED BALANCE ==========
+
+// GetAccountExpectedBalances retrieves expected balance view for all accounts
+func GetAccountExpectedBalances() ([]types.AccountExpectedBalance, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := pool.Query(context.Background(),
+		`SELECT id, name, currency, starting_balance, starting_date,
+			total_income, total_expenses, total_investment_deposits, total_investment_withdrawals,
+			total_transfers_out, total_transfers_in, expected_balance, real_balance, discrepancy
+		 FROM account_expected_balance`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error querying expected balances: %w", err)
+	}
+	defer rows.Close()
+
+	var results []types.AccountExpectedBalance
+	for rows.Next() {
+		var a types.AccountExpectedBalance
+		if err := rows.Scan(&a.Id, &a.Name, &a.Currency, &a.StartingBalance, &a.StartingDate,
+			&a.TotalIncome, &a.TotalExpenses, &a.TotalInvestmentDeposits, &a.TotalInvestmentWithdrawals,
+			&a.TotalTransfersOut, &a.TotalTransfersIn, &a.ExpectedBalance, &a.RealBalance, &a.Discrepancy); err != nil {
+			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+		results = append(results, a)
 	}
 
 	return results, nil
