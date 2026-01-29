@@ -83,6 +83,11 @@ func GetConfigByType(configType string) (types.Config, error) {
 
 // InsertIncome inserts an income record
 func InsertIncome(income types.Income) (types.Income, error) {
+	// Validate amount
+	if income.Amount <= 0 {
+		return types.Income{}, fmt.Errorf("income amount must be positive, got: %.2f", income.Amount)
+	}
+
 	pool, err := GetPool()
 	if err != nil {
 		return types.Income{}, err
@@ -226,6 +231,11 @@ func GetCategories() ([]types.Category, error) {
 
 // InsertExpense inserts an expense record
 func InsertExpense(expense types.Expense) (types.Expense, error) {
+	// Validate amount
+	if expense.Expense <= 0 {
+		return types.Expense{}, fmt.Errorf("expense amount must be positive, got: %.2f", expense.Expense)
+	}
+
 	pool, err := GetPool()
 	if err != nil {
 		return types.Expense{}, err
