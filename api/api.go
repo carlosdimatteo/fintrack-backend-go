@@ -22,8 +22,8 @@ import (
 const exchangerateAPIHost = "https://v6.exchangerate-api.com/v6"
 
 var (
-	warnSkipAPIKeyCheckOnce       sync.Once
-	warnExchangeRateKeyDevOnce    sync.Once
+	warnSkipAPIKeyCheckOnce     sync.Once
+	warnExchangeRateKeyDevOnce  sync.Once
 	warnExchangeRateKeyNotDevOnce sync.Once
 )
 
@@ -1683,6 +1683,40 @@ func getExchangeRate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cacheKey := from + "|" + to
+
+	// Serve from cache if fresh (12h TTL)
+	if body, cachedAt, ok := helpers.ExchangeRateCacheGet(cacheKey); ok {
+		lastFetched := cachedAt.Format(time.RFC3339)
+		if amount == "" {
+			var cached map[string]interface{}
+			if err := json.Unmarshal(body, &cached); err == nil {
+				cached["last_fetched"] = lastFetched
+				out, _ := json.Marshal(cached)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write(out)
+				return
+			}
+		}
+		// Cached rate: add conversion_result for requested amount and last_fetched
+		var cached map[string]interface{}
+		if err := json.Unmarshal(body, &cached); err == nil {
+			if rate, _ := cached["conversion_rate"].(float64); rate != 0 {
+				if amt, err := strconv.ParseFloat(amount, 64); err == nil {
+					cached["conversion_result"] = rate * amt
+					cached["last_fetched"] = lastFetched
+					out, _ := json.Marshal(cached)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					w.Write(out)
+					return
+				}
+			}
+		}
+		// Fall through to API on parse/amount error
+	}
+
 	url := fmt.Sprintf("%s/%s/pair/%s/%s", exchangerateAPIHost, os.Getenv("EXCHANGERATE_API_KEY"), from, to)
 	if amount != "" {
 		url = fmt.Sprintf("%s/%s", url, amount)
@@ -1725,6 +1759,16 @@ func getExchangeRate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(code)
 		json.NewEncoder(w).Encode(result)
 		return
+	}
+
+	// Add last_fetched so clients know when we hit the API and can verify cache behavior
+	now := time.Now()
+	result["last_fetched"] = now.Format(time.RFC3339)
+	body, _ = json.Marshal(result)
+
+	// Cache successful no-amount response only (12h TTL) to avoid re-hitting the API
+	if amount == "" {
+		helpers.ExchangeRateCacheSet(cacheKey, body)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
