@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/carlosdimatteo/fintrack-backend-go/helpers"
 	"github.com/carlosdimatteo/fintrack-backend-go/types"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
@@ -18,16 +19,9 @@ const (
 	sheetName       = "2024 Fintrack"
 )
 
-// IsDevMode returns true if GO_ENV is set to dev, development, or test
-// In dev mode, sheet operations are skipped
-func IsDevMode() bool {
-	env := os.Getenv("GO_ENV")
-	return env == "dev" || env == "development" || env == "test"
-}
-
 func getSheetService() (*sheets.SpreadsheetsValuesService, error) {
 	// Skip in dev mode
-	if IsDevMode() {
+	if helpers.IsDevMode() {
 		return nil, nil
 	}
 	ctx := context.Background()

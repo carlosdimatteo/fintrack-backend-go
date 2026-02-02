@@ -3,51 +3,36 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	googleSS "github.com/carlosdimatteo/fintrack-backend-go/adapters/google"
 	"github.com/carlosdimatteo/fintrack-backend-go/adapters/postgres"
+	"github.com/carlosdimatteo/fintrack-backend-go/helpers"
 	types "github.com/carlosdimatteo/fintrack-backend-go/types"
 	"github.com/gorilla/mux"
 )
 
-// Security middleware configuration
+const exchangerateAPIHost = "https://v6.exchangerate-api.com/v6"
+
 var (
-	apiKey         string
-	allowedOrigins []string
+	warnSkipAPIKeyCheckOnce       sync.Once
+	warnExchangeRateKeyDevOnce    sync.Once
+	warnExchangeRateKeyNotDevOnce sync.Once
 )
-
-func init() {
-	// Load API key from environment
-	apiKey = os.Getenv("API_KEY")
-	if apiKey == "" {
-		log.Println("WARNING: API_KEY not set - API is unprotected!")
-	}
-
-	// Load allowed origins (comma-separated)
-	originsEnv := os.Getenv("ALLOWED_ORIGINS")
-	if originsEnv != "" {
-		allowedOrigins = strings.Split(originsEnv, ",")
-		for i := range allowedOrigins {
-			allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
-		}
-	} else {
-		// Default: allow all in dev mode
-		allowedOrigins = []string{"*"}
-		log.Println("WARNING: ALLOWED_ORIGINS not set - allowing all origins")
-	}
-}
 
 // corsMiddleware handles CORS headers and preflight requests
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		allowed := false
+		allowedOrigins := helpers.GetAllowedOrigins()
 
 		// Check if origin is allowed
 		for _, o := range allowedOrigins {
@@ -92,9 +77,22 @@ func apiKeyMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Skip auth if no API key is configured (dev mode)
+		apiKey := os.Getenv("API_KEY")
 		if apiKey == "" {
-			next.ServeHTTP(w, r)
+			// Skip auth only in dev to avoid unprotected API in production
+			if helpers.IsDevMode() {
+				warnSkipAPIKeyCheckOnce.Do(func() {
+					log.Println("WARNING: API_KEY not set and GO_ENV is dev - skipping API key check (set API_KEY in production)")
+				})
+				next.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(types.Response{
+				Success: false,
+				Message: "API_KEY not configured (set API_KEY or use GO_ENV=dev for local dev)",
+			})
 			return
 		}
 
@@ -1643,6 +1641,97 @@ func submitDebtRepayment(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+// ========== EXCHANGE RATE (ExchangeRate-API pair endpoint, key server-side only) ==========
+
+func getExchangeRate(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if os.Getenv("EXCHANGERATE_API_KEY") == "" {
+		if helpers.IsDevMode() {
+			warnExchangeRateKeyDevOnce.Do(func() {
+				log.Println("WARNING: EXCHANGERATE_API_KEY not set and GO_ENV is dev - exchange rate endpoint returns 503 (set EXCHANGERATE_API_KEY for production)")
+			})
+		} else {
+			warnExchangeRateKeyNotDevOnce.Do(func() {
+				log.Println("WARNING: EXCHANGERATE_API_KEY not set - exchange rate endpoint returns 503 (set EXCHANGERATE_API_KEY or use GO_ENV=dev for local dev)")
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(types.Response{
+			Success: false,
+			Message: "Exchange rate service not configured (EXCHANGERATE_API_KEY missing)",
+		})
+		return
+	}
+
+	from := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("from")))
+	to := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("to")))
+	amount := strings.TrimSpace(r.URL.Query().Get("amount"))
+
+	if from == "" || to == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.Response{
+			Success: false,
+			Message: "Query params 'from' and 'to' (ISO 4217 codes, e.g. EUR, GBP) are required",
+		})
+		return
+	}
+
+	url := fmt.Sprintf("%s/%s/pair/%s/%s", exchangerateAPIHost, os.Getenv("EXCHANGERATE_API_KEY"), from, to)
+	if amount != "" {
+		url = fmt.Sprintf("%s/%s", url, amount)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		log.Printf("ExchangeRate API request failed: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(types.Response{
+			Success: false,
+			Message: "Failed to reach exchange rate service",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("ExchangeRate API read body: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("ExchangeRate API decode: %v", err)
+		ServerErrorResponse(w, r)
+		return
+	}
+
+	if result["result"] == "error" {
+		code := http.StatusBadRequest
+		if errType, _ := result["error-type"].(string); errType == "invalid-key" || errType == "inactive-account" || errType == "quota-reached" {
+			code = http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(body)
+}
+
 func LoadRoutes(muxRouter *mux.Router) {
 	api := muxRouter.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/", greet).Methods("GET")
@@ -1693,6 +1782,9 @@ func LoadRoutes(muxRouter *mux.Router) {
 	api.HandleFunc("/debt/repayment", submitDebtRepayment).Methods("POST", "OPTIONS")
 	api.HandleFunc("/expense-debt", submitExpenseWithDebt).Methods("POST", "OPTIONS")
 	api.HandleFunc("/expenses/recent", getRecentExpenses).Methods("GET")
+
+	// Exchange rate (ExchangeRate-API pair; key in EXCHANGERATE_API_KEY, not exposed to FE)
+	api.HandleFunc("/exchange-rate", getExchangeRate).Methods("GET", "OPTIONS")
 }
 
 func NotFoundResponse(w http.ResponseWriter, r *http.Request) {
