@@ -34,3 +34,6 @@ credentials.json
 app.yaml
 .gcloudignore
 supabase/
+
+# Seed data (personal/setup data – run after migrations; do not commit)
+seeds/*.sql

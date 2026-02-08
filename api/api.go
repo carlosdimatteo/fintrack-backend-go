@@ -1508,7 +1508,10 @@ func submitExpenseWithDebt(w http.ResponseWriter, r *http.Request) {
 	// Build debts array - support both new format (debts array) and old format (single debt fields)
 	var debts []types.Debt
 	accountId := req.AccountId
-
+	currency := req.Currency
+	if currency == "" {
+		currency = "USD"
+	}
 	if len(req.Debts) > 0 {
 		// New format: multiple debts
 		for _, d := range req.Debts {
@@ -1519,7 +1522,7 @@ func submitExpenseWithDebt(w http.ResponseWriter, r *http.Request) {
 				DebtorName:     d.DebtorName,
 				Date:           date,
 				OriginalAmount: req.OriginalAmount,
-				Currency:       d.Currency || req.Currency,
+				Currency:       currency,
 				Outbound:       true,
 				AccountId:      &accountId,
 			}
