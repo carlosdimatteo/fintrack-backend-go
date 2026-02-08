@@ -22,8 +22,8 @@ import (
 const exchangerateAPIHost = "https://v6.exchangerate-api.com/v6"
 
 var (
-	warnSkipAPIKeyCheckOnce     sync.Once
-	warnExchangeRateKeyDevOnce  sync.Once
+	warnSkipAPIKeyCheckOnce       sync.Once
+	warnExchangeRateKeyDevOnce    sync.Once
 	warnExchangeRateKeyNotDevOnce sync.Once
 )
 
@@ -1437,10 +1437,12 @@ type RepaymentRequest struct {
 // Use case: "I lent $100 to John from my BOFA account"
 // DebtEntry represents a single debt in the expense-debt request
 type DebtEntry struct {
-	DebtorId   int32   `json:"debtor_id"`
-	DebtorName string  `json:"debtor_name"`
-	Amount     float64 `json:"amount"`
-	Currency   string  `json:"currency"`
+	DebtorId       int32   `json:"debtor_id"`
+	DebtorName     string  `json:"debtor_name"`
+	Amount         float64 `json:"amount"`
+	Currency       string  `json:"currency"`
+	AccountId      int32   `json:"account_id,omitempty"`
+	OriginalAmount float64 `json:"original_amount,omitempty"`
 }
 
 type ExpenseDebtRequest struct {
@@ -1509,8 +1511,8 @@ func submitExpenseWithDebt(w http.ResponseWriter, r *http.Request) {
 				DebtorId:       d.DebtorId,
 				DebtorName:     d.DebtorName,
 				Date:           date,
-				OriginalAmount: d.Amount,
-				Currency:       d.Currency,
+				OriginalAmount: req.OriginalAmount,
+				Currency:       d.Currency || req.Currency,
 				Outbound:       true,
 				AccountId:      &accountId,
 			}
