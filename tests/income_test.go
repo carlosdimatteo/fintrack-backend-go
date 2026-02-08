@@ -21,6 +21,7 @@ func TestIncomeCreation(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         1500.50,
 		OriginalAmount: 1500.50,
+		Currency:       "USD",
 		Description:    "Salary payment",
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,
@@ -35,20 +36,22 @@ func TestIncomeCreation(t *testing.T) {
 	}
 	AssertFloatEqual(t, income.Amount, result.Amount, 0.01, "Income amount")
 	AssertFloatEqual(t, income.OriginalAmount, result.OriginalAmount, 0.01, "Income originalAmount")
+	AssertEqual(t, income.Currency, result.Currency, "Income currency")
 	AssertEqual(t, income.Description, result.Description, "Income description")
 	AssertEqual(t, income.AccountId, result.AccountId, "Income account ID")
 	AssertEqual(t, income.AccountName, result.AccountName, "Income account name")
 
 	// Verify it's actually in the database
 	var dbAmount, dbOriginalAmount float64
-	var dbDescription string
+	var dbDescription, dbCurrency string
 	err = testPool.QueryRow(context.Background(),
-		`SELECT amount, description, original_amount FROM incomes WHERE id = $1`, result.Id,
-	).Scan(&dbAmount, &dbDescription, &dbOriginalAmount)
+		`SELECT amount, description, original_amount, currency FROM incomes WHERE id = $1`, result.Id,
+	).Scan(&dbAmount, &dbDescription, &dbOriginalAmount, &dbCurrency)
 	AssertNoError(t, err, "Query inserted income")
 	AssertFloatEqual(t, income.Amount, dbAmount, 0.01, "DB income amount")
 	AssertEqual(t, income.Description, dbDescription, "DB income description")
 	AssertFloatEqual(t, income.OriginalAmount, dbOriginalAmount, 0.01, "DB income original_amount")
+	AssertEqual(t, income.Currency, dbCurrency, "DB income currency")
 }
 
 // ========== EXPECTED BALANCE INVARIANT ==========
@@ -72,6 +75,7 @@ func TestIncomeIncreasesExpectedBalance(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         incomeAmount,
 		OriginalAmount: incomeAmount,
+		Currency:       "USD",
 		Description:    "Test income",
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,
@@ -104,6 +108,7 @@ func TestMultipleIncomesAccumulate(t *testing.T) {
 			Date:           time.Now().Format(time.DateTime),
 			Amount:         amount,
 			OriginalAmount: amount,
+			Currency:       "USD",
 			Description:    "Income " + string(rune('A'+i)),
 			AccountId:      testAccount.ID,
 			AccountName:    testAccount.Name,
@@ -136,6 +141,7 @@ func TestIncomeOnlyAffectsTargetAccount(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         1000.00,
 		OriginalAmount: 1000.00,
+		Currency:       "USD",
 		Description:    "Income for A only",
 		AccountId:      accountA.ID,
 		AccountName:    accountA.Name,
@@ -173,6 +179,7 @@ func TestMonthlyIncomeSum(t *testing.T) {
 			Date:           now.Format(time.DateTime),
 			Amount:         amount,
 			OriginalAmount: amount,
+			Currency:       "USD",
 			Description:    "Monthly income",
 			AccountId:      testAccount.ID,
 			AccountName:    testAccount.Name,
@@ -216,6 +223,7 @@ func TestYearlyIncomeSummary(t *testing.T) {
 			Date:           now.Format(time.DateTime),
 			Amount:         amount,
 			OriginalAmount: amount,
+			Currency:       "USD",
 			Description:    []string{"Salary", "Freelance", "Dividends", "Refund"}[i],
 			AccountId:      testAccount.ID,
 			AccountName:    testAccount.Name,
@@ -262,6 +270,7 @@ func TestIncomeWithZeroAmount(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         0,
 		OriginalAmount: 0,
+		Currency:       "USD",
 		Description:    "Zero amount income",
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,
@@ -288,6 +297,7 @@ func TestIncomeWithNegativeAmount(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         -100.00,
 		OriginalAmount: -100.00,
+		Currency:       "USD",
 		Description:    "Negative income",
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,
@@ -313,6 +323,7 @@ func TestIncomeWithEmptyDescription(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         100.00,
 		OriginalAmount: 100.00,
+		Currency:       "USD",
 		Description:    "", // Empty description
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,
@@ -337,6 +348,7 @@ func TestIncomeWithLargeAmount(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         largeAmount,
 		OriginalAmount: largeAmount,
+		Currency:       "USD",
 		Description:    "Large income",
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,
@@ -365,6 +377,7 @@ func TestIncomeWithPreciseDecimal(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         preciseAmount,
 		OriginalAmount: preciseAmount,
+		Currency:       "USD",
 		Description:    "Precise decimal income",
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,
@@ -389,6 +402,7 @@ func TestIncomePagination(t *testing.T) {
 			Date:           time.Now().Format(time.DateTime),
 			Amount:         amount,
 			OriginalAmount: amount,
+			Currency:       "USD",
 			Description:    "Paginated income",
 			AccountId:      testAccount.ID,
 			AccountName:    testAccount.Name,
@@ -438,6 +452,7 @@ func TestIncomeDoesNotAffectRealBalance(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         1000.00,
 		OriginalAmount: 1000.00,
+		Currency:       "USD",
 		Description:    "Test income",
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,
@@ -479,6 +494,7 @@ func TestIncomeCreatesDiscrepancy(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         500.00,
 		OriginalAmount: 500.00,
+		Currency:       "USD",
 		Description:    "Test income",
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,

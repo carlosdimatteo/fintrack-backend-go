@@ -530,6 +530,9 @@ func submitIncome(w http.ResponseWriter, r *http.Request) {
 	if income.OriginalAmount == 0 {
 		income.OriginalAmount = income.Amount
 	}
+	if income.Currency == "" {
+		income.Currency = "USD"
+	}
 
 	// 1. Get config for income row append (using postgres now)
 	config, err := postgres.GetConfigByType("income")
@@ -1587,10 +1590,14 @@ func submitDebtRepayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create income record (originalAmount in request body; default to amount if not provided)
+	// Create income record (originalAmount and currency in request body; default if not provided)
 	origAmt := req.OriginalAmount
 	if origAmt == 0 {
 		origAmt = req.Amount
+	}
+	currency := req.Currency
+	if currency == "" {
+		currency = "USD"
 	}
 	income := types.Income{
 		Date:           time.Now().Format(time.DateTime),
@@ -1599,6 +1606,7 @@ func submitDebtRepayment(w http.ResponseWriter, r *http.Request) {
 		AccountId:      req.AccountId,
 		AccountName:    req.Account,
 		OriginalAmount: origAmt,
+		Currency:       currency,
 	}
 
 	// Create debt record (negative outbound = they paid us back)

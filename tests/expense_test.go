@@ -185,6 +185,7 @@ func TestIncomeAndExpenseNetEffect(t *testing.T) {
 		Date:           time.Now().Format(time.DateTime),
 		Amount:         1000.00,
 		OriginalAmount: 1000.00,
+		Currency:       "USD",
 		Description:    "Paycheck",
 		AccountId:      testAccount.ID,
 		AccountName:    testAccount.Name,

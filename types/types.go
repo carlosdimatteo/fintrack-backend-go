@@ -93,6 +93,7 @@ type Income struct {
 	AccountName    string    `json:"account_name"`
 	CreatedAt      time.Time `json:"created_at,omitempty"`
 	OriginalAmount float64   `json:"originalAmount"` // Informative (e.g. non-USD); ledger uses amount
+	Currency       string    `json:"currency"`       // Currency of originalAmount (e.g. USD, EUR)
 }
 
 type Account struct {
