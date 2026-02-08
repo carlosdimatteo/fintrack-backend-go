@@ -111,11 +111,12 @@ func TestGetYTDTotals(t *testing.T) {
 	incomeAmounts := []float64{5000.00, 3000.00}
 	for _, amount := range incomeAmounts {
 		income := types.Income{
-			Date:        now.Format(time.DateTime),
-			Amount:      amount,
-			Description: "YTD income",
-			AccountId:   testAccount.ID,
-			AccountName: testAccount.Name,
+			Date:           now.Format(time.DateTime),
+			Amount:         amount,
+			OriginalAmount: amount,
+			Description:    "YTD income",
+			AccountId:      testAccount.ID,
+			AccountName:    testAccount.Name,
 		}
 		_, err := postgres.InsertIncome(income)
 		AssertNoError(t, err, "Insert income")
@@ -479,11 +480,12 @@ func TestExpectedBalanceFullFormula(t *testing.T) {
 
 	// Add income: +500
 	income := types.Income{
-		Date:        now.Format(time.DateTime),
-		Amount:      500.00,
-		Description: "Test income",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           now.Format(time.DateTime),
+		Amount:         500.00,
+		OriginalAmount: 500.00,
+		Description:    "Test income",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 	_, err := postgres.InsertIncome(income)
 	AssertNoError(t, err, "Insert income")

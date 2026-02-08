@@ -182,11 +182,12 @@ func TestIncomeAndExpenseNetEffect(t *testing.T) {
 
 	// Add income
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      1000.00,
-		Description: "Paycheck",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         1000.00,
+		OriginalAmount: 1000.00,
+		Description:    "Paycheck",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 	_, err := postgres.InsertIncome(income)
 	AssertNoError(t, err, "Insert income")

@@ -527,6 +527,9 @@ func submitIncome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	income.Date = time.Now().Format(time.DateTime)
+	if income.OriginalAmount == 0 {
+		income.OriginalAmount = income.Amount
+	}
 
 	// 1. Get config for income row append (using postgres now)
 	config, err := postgres.GetConfigByType("income")
@@ -1424,16 +1427,17 @@ func getRecentExpenses(w http.ResponseWriter, r *http.Request) {
 }
 
 type RepaymentRequest struct {
-	DebtorId    int32   `json:"debtor_id"`
-	DebtorName  string  `json:"debtor_name"`
-	Amount      float64 `json:"amount"`
-	Description string  `json:"description"`
-	AccountId   int32   `json:"account_id"`
-	Account     string  `json:"account"`
-	Currency    string  `json:"currency"`
+	DebtorId       int32   `json:"debtor_id"`
+	DebtorName     string  `json:"debtor_name"`
+	Amount         float64 `json:"amount"`
+	Description    string  `json:"description"`
+	AccountId      int32   `json:"account_id"`
+	Account        string  `json:"account"`
+	Currency       string  `json:"currency"`
+	OriginalAmount float64 `json:"originalAmount"` // Informative (e.g. non-USD); defaulted to amount if omitted
 }
 
-// ExpenseDebtRequest is for creating an expense that also creates a linked debt
+// ExpenseDebtRequest is for creating an expense	 that also creates a linked debt
 // Use case: "I lent $100 to John from my BOFA account"
 // DebtEntry represents a single debt in the expense-debt request
 type DebtEntry struct {
@@ -1583,13 +1587,18 @@ func submitDebtRepayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create income record
+	// Create income record (originalAmount in request body; default to amount if not provided)
+	origAmt := req.OriginalAmount
+	if origAmt == 0 {
+		origAmt = req.Amount
+	}
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      req.Amount,
-		Description: fmt.Sprintf("Debt repayment from %s: %s", req.DebtorName, req.Description),
-		AccountId:   req.AccountId,
-		AccountName: req.Account,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         req.Amount,
+		Description:    fmt.Sprintf("Debt repayment from %s: %s", req.DebtorName, req.Description),
+		AccountId:      req.AccountId,
+		AccountName:    req.Account,
+		OriginalAmount: origAmt,
 	}
 
 	// Create debt record (negative outbound = they paid us back)
@@ -1600,7 +1609,7 @@ func submitDebtRepayment(w http.ResponseWriter, r *http.Request) {
 		DebtorId:       req.DebtorId,
 		DebtorName:     req.DebtorName,
 		Date:           time.Now().Format(time.DateTime),
-		OriginalAmount: req.Amount,
+		OriginalAmount: origAmt,
 		Currency:       req.Currency,
 		Outbound:       false, // Inbound = they paid us
 		AccountId:      &accountId,

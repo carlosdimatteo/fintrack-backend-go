@@ -76,9 +76,9 @@ func TestCleanup(t *testing.T) {
 
 	// Add some test data
 	_, err := testPool.Exec(context.Background(),
-		`INSERT INTO incomes (amount, description, account_id, account_name, date)
-		 VALUES ($1, $2, $3, $4, '2026-01-15')`,
-		100.0, "Test income", testAccount.ID, testAccount.Name)
+		`INSERT INTO incomes (amount, description, account_id, account_name, date, original_amount)
+		 VALUES ($1, $2, $3, $4, '2026-01-15', $5)`,
+		100.0, "Test income", testAccount.ID, testAccount.Name, 100.0)
 	AssertNoError(t, err, "Insert test income")
 
 	// Verify it exists

@@ -93,14 +93,20 @@ func InsertIncome(income types.Income) (types.Income, error) {
 		return types.Income{}, err
 	}
 
+	// Default originalAmount to amount if not set (e.g. USD-only income)
+	originalAmount := income.OriginalAmount
+	if originalAmount == 0 {
+		originalAmount = income.Amount
+	}
+
 	var result types.Income
 	err = pool.QueryRow(context.Background(),
-		`INSERT INTO incomes (date, amount, description, account_id, account_name)
-		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, date, amount, description, account_id, account_name, created_at`,
-		income.Date, income.Amount, income.Description, income.AccountId, income.AccountName,
+		`INSERT INTO incomes (date, amount, description, account_id, account_name, original_amount)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 RETURNING id, date, amount, description, account_id, account_name, original_amount, created_at`,
+		income.Date, income.Amount, income.Description, income.AccountId, income.AccountName, originalAmount,
 	).Scan(&result.Id, &result.Date, &result.Amount, &result.Description,
-		&result.AccountId, &result.AccountName, &result.CreatedAt)
+		&result.AccountId, &result.AccountName, &result.OriginalAmount, &result.CreatedAt)
 
 	if err != nil {
 		return types.Income{}, fmt.Errorf("error inserting income: %w", err)
@@ -180,7 +186,7 @@ func GetIncomes(limit int, offset int) ([]types.Income, int, error) {
 
 	// Get paginated results
 	rows, err := pool.Query(context.Background(),
-		`SELECT id, date, amount, description, account_id, account_name, created_at 
+		`SELECT id, date, amount, description, account_id, account_name, original_amount, created_at 
 		 FROM incomes ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
 		limit, offset,
 	)
@@ -193,7 +199,7 @@ func GetIncomes(limit int, offset int) ([]types.Income, int, error) {
 	for rows.Next() {
 		var income types.Income
 		if err := rows.Scan(&income.Id, &income.Date, &income.Amount, &income.Description,
-			&income.AccountId, &income.AccountName, &income.CreatedAt); err != nil {
+			&income.AccountId, &income.AccountName, &income.OriginalAmount, &income.CreatedAt); err != nil {
 			return nil, 0, fmt.Errorf("error scanning row: %w", err)
 		}
 		results = append(results, income)
@@ -1148,15 +1154,19 @@ func RecordDebtRepayment(income types.Income, debt types.Debt) (types.Income, ty
 	}
 	defer tx.Rollback(ctx)
 
-	// Insert income
+	// Insert income (original_amount: default to amount if not set)
+	origAmt := income.OriginalAmount
+	if origAmt == 0 {
+		origAmt = income.Amount
+	}
 	var incomeResult types.Income
 	err = tx.QueryRow(ctx,
-		`INSERT INTO incomes (date, amount, description, account_id, account_name)
-		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, date, amount, description, account_id, account_name, created_at`,
-		income.Date, income.Amount, income.Description, income.AccountId, income.AccountName,
+		`INSERT INTO incomes (date, amount, description, account_id, account_name, original_amount)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 RETURNING id, date, amount, description, account_id, account_name, original_amount, created_at`,
+		income.Date, income.Amount, income.Description, income.AccountId, income.AccountName, origAmt,
 	).Scan(&incomeResult.Id, &incomeResult.Date, &incomeResult.Amount, &incomeResult.Description,
-		&incomeResult.AccountId, &incomeResult.AccountName, &incomeResult.CreatedAt)
+		&incomeResult.AccountId, &incomeResult.AccountName, &incomeResult.OriginalAmount, &incomeResult.CreatedAt)
 	if err != nil {
 		return types.Income{}, types.Debt{}, fmt.Errorf("error inserting income: %w", err)
 	}

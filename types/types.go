@@ -85,13 +85,14 @@ type Investment struct {
 }
 
 type Income struct {
-	Id          int32     `json:"id,omitempty"`
-	Date        string    `json:"date,omitempty"`
-	Amount      float64   `json:"amount"`
-	Description string    `json:"description"`
-	AccountId   int32     `json:"account_id"`
-	AccountName string    `json:"account_name"`
-	CreatedAt   time.Time `json:"created_at,omitempty"`
+	Id             int32     `json:"id,omitempty"`
+	Date           string    `json:"date,omitempty"`
+	Amount         float64   `json:"amount"`
+	Description    string    `json:"description"`
+	AccountId      int32     `json:"account_id"`
+	AccountName    string    `json:"account_name"`
+	CreatedAt      time.Time `json:"created_at,omitempty"`
+	OriginalAmount float64   `json:"originalAmount"` // Informative (e.g. non-USD); ledger uses amount
 }
 
 type Account struct {

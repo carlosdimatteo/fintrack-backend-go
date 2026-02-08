@@ -332,11 +332,12 @@ func TestDebtRepaymentCreation(t *testing.T) {
 	now := time.Now()
 
 	income := types.Income{
-		Date:        now.Format(time.DateTime),
-		Amount:      50.00,
-		Description: "Repayment from John",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           now.Format(time.DateTime),
+		Amount:         50.00,
+		OriginalAmount: 50.00,
+		Description:    "Repayment from John",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 
 	accountId := testAccount.ID
@@ -386,11 +387,12 @@ func TestDebtRepaymentAffectsExpectedBalance(t *testing.T) {
 	initialExpected := GetAccountExpectedBalance(t, testAccount.ID)
 
 	income := types.Income{
-		Date:        now.Format(time.DateTime),
-		Amount:      75.00,
-		Description: "Repayment",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           now.Format(time.DateTime),
+		Amount:         75.00,
+		OriginalAmount: 75.00,
+		Description:    "Repayment",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 
 	accountId := testAccount.ID
@@ -454,11 +456,12 @@ func TestDebtByDebtorSummary(t *testing.T) {
 
 	// John pays back $40
 	income := types.Income{
-		Date:        now.Format(time.DateTime),
-		Amount:      40.00,
-		Description: "Partial repayment",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           now.Format(time.DateTime),
+		Amount:         40.00,
+		OriginalAmount: 40.00,
+		Description:    "Partial repayment",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 	accountId := testAccount.ID
 	debt2 := types.Debt{
@@ -576,11 +579,12 @@ func TestFullDebtLifecycle(t *testing.T) {
 
 	// Step 2: John pays back in full
 	income := types.Income{
-		Date:        now.Format(time.DateTime),
-		Amount:      100.00,
-		Description: "Full repayment from John",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           now.Format(time.DateTime),
+		Amount:         100.00,
+		OriginalAmount: 100.00,
+		Description:    "Full repayment from John",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 	accountId := testAccount.ID
 	repaymentDebt := types.Debt{

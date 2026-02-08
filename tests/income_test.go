@@ -18,11 +18,12 @@ func TestIncomeCreation(t *testing.T) {
 
 	testAccount := GetTestAccount(TestAccountBankID)
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      1500.50,
-		Description: "Salary payment",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         1500.50,
+		OriginalAmount: 1500.50,
+		Description:    "Salary payment",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 
 	result, err := postgres.InsertIncome(income)
@@ -33,19 +34,21 @@ func TestIncomeCreation(t *testing.T) {
 		t.Error("Expected income to have an ID assigned")
 	}
 	AssertFloatEqual(t, income.Amount, result.Amount, 0.01, "Income amount")
+	AssertFloatEqual(t, income.OriginalAmount, result.OriginalAmount, 0.01, "Income originalAmount")
 	AssertEqual(t, income.Description, result.Description, "Income description")
 	AssertEqual(t, income.AccountId, result.AccountId, "Income account ID")
 	AssertEqual(t, income.AccountName, result.AccountName, "Income account name")
 
 	// Verify it's actually in the database
-	var dbAmount float64
+	var dbAmount, dbOriginalAmount float64
 	var dbDescription string
 	err = testPool.QueryRow(context.Background(),
-		`SELECT amount, description FROM incomes WHERE id = $1`, result.Id,
-	).Scan(&dbAmount, &dbDescription)
+		`SELECT amount, description, original_amount FROM incomes WHERE id = $1`, result.Id,
+	).Scan(&dbAmount, &dbDescription, &dbOriginalAmount)
 	AssertNoError(t, err, "Query inserted income")
 	AssertFloatEqual(t, income.Amount, dbAmount, 0.01, "DB income amount")
 	AssertEqual(t, income.Description, dbDescription, "DB income description")
+	AssertFloatEqual(t, income.OriginalAmount, dbOriginalAmount, 0.01, "DB income original_amount")
 }
 
 // ========== EXPECTED BALANCE INVARIANT ==========
@@ -66,11 +69,12 @@ func TestIncomeIncreasesExpectedBalance(t *testing.T) {
 	// Add income
 	incomeAmount := 500.00
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      incomeAmount,
-		Description: "Test income",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         incomeAmount,
+		OriginalAmount: incomeAmount,
+		Description:    "Test income",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 
 	_, err := postgres.InsertIncome(income)
@@ -97,11 +101,12 @@ func TestMultipleIncomesAccumulate(t *testing.T) {
 
 	for i, amount := range amounts {
 		income := types.Income{
-			Date:        time.Now().Format(time.DateTime),
-			Amount:      amount,
-			Description: "Income " + string(rune('A'+i)),
-			AccountId:   testAccount.ID,
-			AccountName: testAccount.Name,
+			Date:           time.Now().Format(time.DateTime),
+			Amount:         amount,
+			OriginalAmount: amount,
+			Description:    "Income " + string(rune('A'+i)),
+			AccountId:      testAccount.ID,
+			AccountName:    testAccount.Name,
 		}
 		_, err := postgres.InsertIncome(income)
 		AssertNoError(t, err, "Insert income")
@@ -128,11 +133,12 @@ func TestIncomeOnlyAffectsTargetAccount(t *testing.T) {
 
 	// Add income ONLY to account A
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      1000.00,
-		Description: "Income for A only",
-		AccountId:   accountA.ID,
-		AccountName: accountA.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         1000.00,
+		OriginalAmount: 1000.00,
+		Description:    "Income for A only",
+		AccountId:      accountA.ID,
+		AccountName:    accountA.Name,
 	}
 	_, err := postgres.InsertIncome(income)
 	AssertNoError(t, err, "Insert income")
@@ -164,11 +170,12 @@ func TestMonthlyIncomeSum(t *testing.T) {
 
 	for _, amount := range amounts {
 		income := types.Income{
-			Date:        now.Format(time.DateTime),
-			Amount:      amount,
-			Description: "Monthly income",
-			AccountId:   testAccount.ID,
-			AccountName: testAccount.Name,
+			Date:           now.Format(time.DateTime),
+			Amount:         amount,
+			OriginalAmount: amount,
+			Description:    "Monthly income",
+			AccountId:      testAccount.ID,
+			AccountName:    testAccount.Name,
 		}
 		_, err := postgres.InsertIncome(income)
 		AssertNoError(t, err, "Insert income")
@@ -206,11 +213,12 @@ func TestYearlyIncomeSummary(t *testing.T) {
 
 	for i, amount := range incomeAmounts {
 		income := types.Income{
-			Date:        now.Format(time.DateTime),
-			Amount:      amount,
-			Description: []string{"Salary", "Freelance", "Dividends", "Refund"}[i],
-			AccountId:   testAccount.ID,
-			AccountName: testAccount.Name,
+			Date:           now.Format(time.DateTime),
+			Amount:         amount,
+			OriginalAmount: amount,
+			Description:    []string{"Salary", "Freelance", "Dividends", "Refund"}[i],
+			AccountId:      testAccount.ID,
+			AccountName:    testAccount.Name,
 		}
 		_, err := postgres.InsertIncome(income)
 		AssertNoError(t, err, "Insert income")
@@ -251,11 +259,12 @@ func TestIncomeWithZeroAmount(t *testing.T) {
 	initialExpected := GetAccountExpectedBalance(t, testAccount.ID)
 
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      0,
-		Description: "Zero amount income",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         0,
+		OriginalAmount: 0,
+		Description:    "Zero amount income",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 
 	_, err := postgres.InsertIncome(income)
@@ -276,11 +285,12 @@ func TestIncomeWithNegativeAmount(t *testing.T) {
 	initialExpected := GetAccountExpectedBalance(t, testAccount.ID)
 
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      -100.00,
-		Description: "Negative income",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         -100.00,
+		OriginalAmount: -100.00,
+		Description:    "Negative income",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 
 	_, err := postgres.InsertIncome(income)
@@ -300,11 +310,12 @@ func TestIncomeWithEmptyDescription(t *testing.T) {
 	testAccount := GetTestAccount(TestAccountBankID)
 
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      100.00,
-		Description: "", // Empty description
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         100.00,
+		OriginalAmount: 100.00,
+		Description:    "", // Empty description
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 
 	result, err := postgres.InsertIncome(income)
@@ -323,11 +334,12 @@ func TestIncomeWithLargeAmount(t *testing.T) {
 	// Large amount (1 million)
 	largeAmount := 1000000.00
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      largeAmount,
-		Description: "Large income",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         largeAmount,
+		OriginalAmount: largeAmount,
+		Description:    "Large income",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 
 	result, err := postgres.InsertIncome(income)
@@ -350,11 +362,12 @@ func TestIncomeWithPreciseDecimal(t *testing.T) {
 	// Precise decimal amount
 	preciseAmount := 1234.56
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      preciseAmount,
-		Description: "Precise decimal income",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         preciseAmount,
+		OriginalAmount: preciseAmount,
+		Description:    "Precise decimal income",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 
 	result, err := postgres.InsertIncome(income)
@@ -371,12 +384,14 @@ func TestIncomePagination(t *testing.T) {
 
 	// Insert 15 incomes
 	for i := 0; i < 15; i++ {
+		amount := float64(i+1) * 100
 		income := types.Income{
-			Date:        time.Now().Format(time.DateTime),
-			Amount:      float64(i+1) * 100,
-			Description: "Paginated income",
-			AccountId:   testAccount.ID,
-			AccountName: testAccount.Name,
+			Date:           time.Now().Format(time.DateTime),
+			Amount:         amount,
+			OriginalAmount: amount,
+			Description:    "Paginated income",
+			AccountId:      testAccount.ID,
+			AccountName:    testAccount.Name,
 		}
 		_, err := postgres.InsertIncome(income)
 		AssertNoError(t, err, "Insert income for pagination")
@@ -420,11 +435,12 @@ func TestIncomeDoesNotAffectRealBalance(t *testing.T) {
 
 	// Add income
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      1000.00,
-		Description: "Test income",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         1000.00,
+		OriginalAmount: 1000.00,
+		Description:    "Test income",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 	_, err := postgres.InsertIncome(income)
 	AssertNoError(t, err, "Insert income")
@@ -460,11 +476,12 @@ func TestIncomeCreatesDiscrepancy(t *testing.T) {
 
 	// Add income - this increases expected but not real
 	income := types.Income{
-		Date:        time.Now().Format(time.DateTime),
-		Amount:      500.00,
-		Description: "Test income",
-		AccountId:   testAccount.ID,
-		AccountName: testAccount.Name,
+		Date:           time.Now().Format(time.DateTime),
+		Amount:         500.00,
+		OriginalAmount: 500.00,
+		Description:    "Test income",
+		AccountId:      testAccount.ID,
+		AccountName:    testAccount.Name,
 	}
 	_, err = postgres.InsertIncome(income)
 	AssertNoError(t, err, "Insert income")

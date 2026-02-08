@@ -158,6 +158,7 @@ func SubmitIncome(income types.Income, config types.Config) (*sheets.Spreadsheet
 				income.AccountName,
 				income.Description,
 				income.Amount,
+				income.OriginalAmount,
 			},
 		},
 	}
