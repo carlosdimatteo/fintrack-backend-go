@@ -1126,10 +1126,11 @@ type DashboardResponse struct {
 		InvestmentDeposits float64 `json:"investment_deposits"`
 		Savings            float64 `json:"savings"`
 	} `json:"ytd"`
-	Goals           types.YearlyGoals                `json:"goals"`
-	NetWorth        types.NetWorthSnapshot           `json:"net_worth"`
-	Investments     []types.InvestmentAccountSummary `json:"investments"`
-	SavingsProgress types.SavingsProgress            `json:"savings_progress"`
+	Goals                     types.YearlyGoals                `json:"goals"`
+	NetWorth                  types.NetWorthSnapshot           `json:"net_worth"`
+	Investments               []types.InvestmentAccountSummary `json:"investments"`
+	SavingsProgress           types.SavingsProgress            `json:"savings_progress"`
+	ExpensesSinceLastSnapshot float64                          `json:"expenses_since_last_snapshot"`
 }
 
 func getDashboard(w http.ResponseWriter, r *http.Request) {
@@ -1175,7 +1176,9 @@ func getDashboard(w http.ResponseWriter, r *http.Request) {
 	dashboard.CurrentMonth.InvestmentDeposits = monthInvestments
 
 	// Calculate savings
-	dashboard.CurrentMonth.Savings = monthIncome - monthExpenses - monthInvestments
+	// Investment deposits are not subtracted: they move money between buckets
+	// (cash → investments) without changing total savings.
+	dashboard.CurrentMonth.Savings = monthIncome - monthExpenses
 	if monthIncome > 0 {
 		dashboard.CurrentMonth.SavingsRate = (dashboard.CurrentMonth.Savings / monthIncome) * 100
 	}
@@ -1185,7 +1188,7 @@ func getDashboard(w http.ResponseWriter, r *http.Request) {
 	dashboard.YTD.Income = ytdIncome
 	dashboard.YTD.Expenses = ytdExpenses
 	dashboard.YTD.InvestmentDeposits = ytdInvestments
-	dashboard.YTD.Savings = ytdIncome - ytdExpenses - ytdInvestments
+	dashboard.YTD.Savings = ytdIncome - ytdExpenses
 
 	// Get goals for the specified year
 	goals, _ := postgres.GetYearlyGoals(year)
@@ -1214,6 +1217,16 @@ func getDashboard(w http.ResponseWriter, r *http.Request) {
 	// Get investment summary (current state - not historical)
 	investments, _ := postgres.GetInvestmentAccountSummary()
 	dashboard.Investments = investments
+
+	// Expenses logged after the most recent snapshot — used by the dashboard
+	// to recognize that a non-zero discrepancy is just unreconciled spending.
+	// Only meaningful for the current calendar month.
+	if year == currentYear && month == currentMonth && !dashboard.NetWorth.CreatedAt.IsZero() {
+		expensesSince, err := postgres.GetExpenseSumSince(dashboard.NetWorth.CreatedAt)
+		if err == nil {
+			dashboard.ExpensesSinceLastSnapshot = expensesSince
+		}
+	}
 
 	// Calculate savings progress
 	// For current year: use live calculated net worth
@@ -1508,21 +1521,31 @@ func submitExpenseWithDebt(w http.ResponseWriter, r *http.Request) {
 	// Build debts array - support both new format (debts array) and old format (single debt fields)
 	var debts []types.Debt
 	accountId := req.AccountId
-	currency := req.Currency
-	if currency == "" {
-		currency = "USD"
+	fallbackCurrency := req.Currency
+	if fallbackCurrency == "" {
+		fallbackCurrency = "USD"
 	}
 	if len(req.Debts) > 0 {
-		// New format: multiple debts
+		// New format: multiple debts. Each debt carries its own currency and
+		// original_amount so a split can be denominated independently of the
+		// parent expense's currency.
 		for _, d := range req.Debts {
+			debtCurrency := d.Currency
+			if debtCurrency == "" {
+				debtCurrency = fallbackCurrency
+			}
+			debtOriginal := d.OriginalAmount
+			if debtOriginal == 0 {
+				debtOriginal = d.Amount
+			}
 			debt := types.Debt{
 				Description:    req.Description,
 				Amount:         d.Amount,
 				DebtorId:       d.DebtorId,
 				DebtorName:     d.DebtorName,
 				Date:           date,
-				OriginalAmount: req.OriginalAmount,
-				Currency:       currency,
+				OriginalAmount: debtOriginal,
+				Currency:       debtCurrency,
 				Outbound:       true,
 				AccountId:      &accountId,
 			}
