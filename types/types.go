@@ -36,7 +36,8 @@ type Expense struct {
 
 type BudgetByCategory struct {
 	Amount       float64 `json:"amount"`
-	Spent        float64 `json:"spent"`
+	Spent        float64 `json:"spent"` // your share: expense minus what was lent from it
+	Lent         float64 `json:"lent"`
 	CategoryName string  `json:"category_name"`
 	CategoryId   int32   `json:"category_id"`
 }
@@ -275,7 +276,8 @@ type BudgetHistoryCategory struct {
 	CategoryId    int32   `json:"category_id"`
 	CategoryName  string  `json:"category_name"`
 	Budget        float64 `json:"budget"`
-	Spent         float64 `json:"spent"`
+	Spent         float64 `json:"spent"` // your share: expense minus what was lent from it
+	Lent          float64 `json:"lent"`
 	Difference    float64 `json:"difference"`      // budget - spent (positive = under budget)
 	PctOfExpenses float64 `json:"pct_of_expenses"` // spent / total_expenses * 100
 	PctOfIncome   float64 `json:"pct_of_income"`   // spent / total_income * 100
@@ -284,8 +286,9 @@ type BudgetHistoryCategory struct {
 // BudgetHistoryMonth represents budget breakdown for a single month
 type BudgetHistoryMonth struct {
 	Month         int                     `json:"month"`
-	TotalExpenses float64                 `json:"total_expenses"`
-	TotalIncome   float64                 `json:"total_income"`
+	TotalExpenses float64                 `json:"total_expenses"` // your share, excludes lent
+	TotalLent     float64                 `json:"total_lent"`
+	TotalIncome   float64                 `json:"total_income"` // excludes debt repayments
 	Categories    []BudgetHistoryCategory `json:"categories"`
 }
 
@@ -295,6 +298,7 @@ type BudgetHistoryYearlyCategory struct {
 	CategoryName  string  `json:"category_name"`
 	YearlyBudget  float64 `json:"yearly_budget"` // budget * 12
 	TotalSpent    float64 `json:"total_spent"`
+	TotalLent     float64 `json:"total_lent"`
 	Difference    float64 `json:"difference"`      // yearly_budget - total_spent
 	PctOfExpenses float64 `json:"pct_of_expenses"` // total_spent / yearly_expenses * 100
 	PctOfIncome   float64 `json:"pct_of_income"`   // total_spent / yearly_income * 100

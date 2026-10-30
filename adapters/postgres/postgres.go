@@ -1287,7 +1287,7 @@ func GetBudgets() ([]types.BudgetByCategory, error) {
 	}
 
 	rows, err := pool.Query(context.Background(),
-		`SELECT amount, spent, category_name, category_id FROM budget_by_category_current_month ORDER BY category_name`,
+		`SELECT amount, spent, lent, category_name, category_id FROM budget_by_category_current_month ORDER BY category_name`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error querying budgets: %w", err)
@@ -1297,7 +1297,7 @@ func GetBudgets() ([]types.BudgetByCategory, error) {
 	var results []types.BudgetByCategory
 	for rows.Next() {
 		var b types.BudgetByCategory
-		if err := rows.Scan(&b.Amount, &b.Spent, &b.CategoryName, &b.CategoryId); err != nil {
+		if err := rows.Scan(&b.Amount, &b.Spent, &b.Lent, &b.CategoryName, &b.CategoryId); err != nil {
 			return nil, fmt.Errorf("error scanning row: %w", err)
 		}
 		results = append(results, b)
@@ -1321,6 +1321,10 @@ func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
 		CategoryId   int32
 		CategoryName string
 		Budget       float64
+	}
+	type categorySpend struct {
+		Spent float64
+		Lent  float64
 	}
 	var categories []categoryBudget
 
@@ -1351,35 +1355,36 @@ func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
 			Categories: []types.BudgetHistoryCategory{},
 		}
 
-		// Get total income for this month
+		// Repayments are excluded: lent money is already left out of expenses, so counting it
+		// coming back as income would double count it.
 		err = pool.QueryRow(ctx,
-			`SELECT COALESCE(SUM(amount), 0) FROM incomes 
-			 WHERE EXTRACT(YEAR FROM created_at) = $1 AND EXTRACT(MONTH FROM created_at) = $2`,
+			`SELECT COALESCE(SUM(amount), 0) FROM incomes i
+			 WHERE EXTRACT(YEAR FROM i.created_at) = $1 AND EXTRACT(MONTH FROM i.created_at) = $2
+			   AND NOT EXISTS (SELECT 1 FROM debts d WHERE d.income_id = i.id)`,
 			year, month,
 		).Scan(&monthData.TotalIncome)
 		if err != nil {
 			return types.BudgetHistoryResponse{}, fmt.Errorf("error getting monthly income: %w", err)
 		}
 
-		// Get total expenses for this month
-		err = pool.QueryRow(ctx,
-			`SELECT COALESCE(SUM(expense), 0) FROM expenses 
-			 WHERE EXTRACT(YEAR FROM created_at) = $1 AND EXTRACT(MONTH FROM created_at) = $2`,
-			year, month,
-		).Scan(&monthData.TotalExpenses)
-		if err != nil {
-			return types.BudgetHistoryResponse{}, fmt.Errorf("error getting monthly expenses: %w", err)
-		}
-
-		// Get spending per category for this month
-		spendingByCategory := make(map[int32]float64)
+		// Spending counts only your share of each expense; uncategorized rows (NULL category)
+		// count toward the month total only.
+		spendingByCategory := make(map[int32]categorySpend)
 		expRows, err := pool.Query(ctx,
-			`SELECT category_id, COALESCE(SUM(expense), 0) as spent
-			 FROM expenses
-			 WHERE EXTRACT(YEAR FROM created_at) = $1 
-			   AND EXTRACT(MONTH FROM created_at) = $2
-			   AND category_id IS NOT NULL
-			 GROUP BY category_id`,
+			`WITH lent_by_expense AS (
+				SELECT expense_id, SUM(amount) AS lent
+				FROM debts
+				WHERE outbound AND expense_id IS NOT NULL
+				GROUP BY expense_id
+			 )
+			 SELECT e.category_id,
+				COALESCE(SUM(e.expense - COALESCE(l.lent, 0)), 0) AS spent,
+				COALESCE(SUM(COALESCE(l.lent, 0)), 0) AS lent
+			 FROM expenses e
+			 LEFT JOIN lent_by_expense l ON l.expense_id = e.id
+			 WHERE EXTRACT(YEAR FROM e.created_at) = $1
+			   AND EXTRACT(MONTH FROM e.created_at) = $2
+			 GROUP BY e.category_id`,
 			year, month,
 		)
 		if err != nil {
@@ -1387,25 +1392,34 @@ func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
 		}
 
 		for expRows.Next() {
-			var catId int32
-			var spent float64
-			if err := expRows.Scan(&catId, &spent); err != nil {
+			var catId *int32
+			var s categorySpend
+			if err := expRows.Scan(&catId, &s.Spent, &s.Lent); err != nil {
 				expRows.Close()
 				return types.BudgetHistoryResponse{}, fmt.Errorf("error scanning spending: %w", err)
 			}
-			spendingByCategory[catId] = spent
+			monthData.TotalExpenses += s.Spent
+			monthData.TotalLent += s.Lent
+			if catId != nil {
+				spendingByCategory[*catId] = s
+			}
 		}
 		expRows.Close()
+		if err := expRows.Err(); err != nil {
+			return types.BudgetHistoryResponse{}, fmt.Errorf("error reading spending: %w", err)
+		}
 
 		// Build category breakdown
 		for _, cat := range categories {
-			spent := spendingByCategory[cat.CategoryId]
+			spend := spendingByCategory[cat.CategoryId]
+			spent := spend.Spent
 
 			bhc := types.BudgetHistoryCategory{
 				CategoryId:   cat.CategoryId,
 				CategoryName: cat.CategoryName,
 				Budget:       cat.Budget,
 				Spent:        spent,
+				Lent:         spend.Lent,
 				Difference:   cat.Budget - spent, // positive = under budget
 			}
 
@@ -1429,12 +1443,15 @@ func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
 	}
 
 	// Aggregate from monthly data
-	yearlySpendingByCategory := make(map[int32]float64)
+	yearlySpendingByCategory := make(map[int32]categorySpend)
 	for _, month := range response.Months {
 		yearlyTotals.TotalExpenses += month.TotalExpenses
 		yearlyTotals.TotalIncome += month.TotalIncome
 		for _, cat := range month.Categories {
-			yearlySpendingByCategory[cat.CategoryId] += cat.Spent
+			s := yearlySpendingByCategory[cat.CategoryId]
+			s.Spent += cat.Spent
+			s.Lent += cat.Lent
+			yearlySpendingByCategory[cat.CategoryId] = s
 		}
 	}
 
@@ -1451,7 +1468,8 @@ func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
 
 	// Build yearly category breakdown
 	for _, cat := range categories {
-		totalSpent := yearlySpendingByCategory[cat.CategoryId]
+		yearlySpend := yearlySpendingByCategory[cat.CategoryId]
+		totalSpent := yearlySpend.Spent
 		yearlyBudget := cat.Budget * 12
 
 		yhc := types.BudgetHistoryYearlyCategory{
@@ -1459,6 +1477,7 @@ func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
 			CategoryName: cat.CategoryName,
 			YearlyBudget: yearlyBudget,
 			TotalSpent:   totalSpent,
+			TotalLent:    yearlySpend.Lent,
 			Difference:   yearlyBudget - totalSpent,
 		}
 
