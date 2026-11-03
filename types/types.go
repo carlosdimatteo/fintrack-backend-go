@@ -35,11 +35,26 @@ type Expense struct {
 }
 
 type BudgetByCategory struct {
-	Amount       float64 `json:"amount"`
-	Spent        float64 `json:"spent"` // your share: expense minus what was lent from it
+	Amount       float64 `json:"amount"` // monthly budget in effect this month
+	Spent        float64 `json:"spent"`  // your share: expense minus what was lent from it
 	Lent         float64 `json:"lent"`
 	CategoryName string  `json:"category_name"`
 	CategoryId   int32   `json:"category_id"`
+	BudgetEvaluation
+}
+
+// BudgetEvaluation is a category's budget vs actual for one month.
+type BudgetEvaluation struct {
+	HasBudget          bool    `json:"has_budget"`
+	Actual             float64 `json:"actual"` // own spent + spent of categories rolled into this one
+	EvaluateYTD        bool    `json:"evaluate_ytd"`
+	RollupCategoryId   *int32  `json:"rollup_category_id"` // set: counts toward that category, not evaluated itself
+	RollupCategoryName string  `json:"rollup_category_name,omitempty"`
+	Notes              *string `json:"notes"`
+	YTDBudget          float64 `json:"ytd_budget"` // sum of each month's budget, January through this month
+	YTDActual          float64 `json:"ytd_actual"`
+	FullYearBudget     float64 `json:"full_year_budget"`
+	Status             string  `json:"status"` // over | warning | ok | neutral (not evaluated)
 }
 
 type DebtByDebtor struct {
@@ -289,14 +304,16 @@ type BudgetHistoryCategory struct {
 	Budget        float64 `json:"budget"`
 	Spent         float64 `json:"spent"` // your share: expense minus what was lent from it
 	Lent          float64 `json:"lent"`
-	Difference    float64 `json:"difference"`      // budget - spent (positive = under budget)
+	Difference    float64 `json:"difference"`      // budget - actual on the evaluated basis (YTD when evaluate_ytd)
 	PctOfExpenses float64 `json:"pct_of_expenses"` // spent / total_expenses * 100
 	PctOfIncome   float64 `json:"pct_of_income"`   // spent / total_income * 100
+	BudgetEvaluation
 }
 
 // BudgetHistoryMonth represents budget breakdown for a single month
 type BudgetHistoryMonth struct {
 	Month         int                     `json:"month"`
+	TotalBudget   float64                 `json:"total_budget"`   // categories not rolled into another one
 	TotalExpenses float64                 `json:"total_expenses"` // your share, excludes lent
 	TotalLent     float64                 `json:"total_lent"`
 	TotalIncome   float64                 `json:"total_income"` // excludes debt repayments
@@ -305,21 +322,24 @@ type BudgetHistoryMonth struct {
 
 // BudgetHistoryYearlyCategory represents yearly totals for a category
 type BudgetHistoryYearlyCategory struct {
-	CategoryId    int32   `json:"category_id"`
-	CategoryName  string  `json:"category_name"`
-	YearlyBudget  float64 `json:"yearly_budget"` // budget * 12
-	TotalSpent    float64 `json:"total_spent"`
-	TotalLent     float64 `json:"total_lent"`
-	Difference    float64 `json:"difference"`      // yearly_budget - total_spent
-	PctOfExpenses float64 `json:"pct_of_expenses"` // total_spent / yearly_expenses * 100
-	PctOfIncome   float64 `json:"pct_of_income"`   // total_spent / yearly_income * 100
+	CategoryId         int32   `json:"category_id"`
+	CategoryName       string  `json:"category_name"`
+	YearlyBudget       float64 `json:"yearly_budget"` // sum of each month's budget
+	TotalSpent         float64 `json:"total_spent"`
+	TotalLent          float64 `json:"total_lent"`
+	TotalActual        float64 `json:"total_actual"`    // includes spent of categories rolled into this one
+	Difference         float64 `json:"difference"`      // yearly_budget - total_actual
+	PctOfExpenses      float64 `json:"pct_of_expenses"` // total_spent / yearly_expenses * 100
+	PctOfIncome        float64 `json:"pct_of_income"`   // total_spent / yearly_income * 100
+	RollupCategoryName string  `json:"rollup_category_name,omitempty"`
+	Status             string  `json:"status"`
 }
 
 // BudgetHistoryYearlyTotals represents yearly aggregate data
 type BudgetHistoryYearlyTotals struct {
 	TotalExpenses float64                       `json:"total_expenses"`
 	TotalIncome   float64                       `json:"total_income"`
-	TotalBudget   float64                       `json:"total_budget"` // sum of all category budgets * 12
+	TotalBudget   float64                       `json:"total_budget"` // sum of the months' total_budget
 	Difference    float64                       `json:"difference"`   // total_budget - total_expenses
 	SavingsRate   float64                       `json:"savings_rate"` // (income - expenses) / income * 100
 	Categories    []BudgetHistoryYearlyCategory `json:"categories"`

@@ -1235,226 +1235,6 @@ func GetExpenses(limit int, offset int) ([]types.Expense, int, error) {
 	return results, count, nil
 }
 
-// ========== BUDGETS ==========
-
-// GetBudgets retrieves budget by category from the view
-func GetBudgets() ([]types.BudgetByCategory, error) {
-	pool, err := GetPool()
-	if err != nil {
-		return nil, err
-	}
-
-	rows, err := pool.Query(context.Background(),
-		`SELECT amount, spent, lent, category_name, category_id FROM budget_by_category_current_month ORDER BY category_name`,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error querying budgets: %w", err)
-	}
-	defer rows.Close()
-
-	var results []types.BudgetByCategory
-	for rows.Next() {
-		var b types.BudgetByCategory
-		if err := rows.Scan(&b.Amount, &b.Spent, &b.Lent, &b.CategoryName, &b.CategoryId); err != nil {
-			return nil, fmt.Errorf("error scanning row: %w", err)
-		}
-		results = append(results, b)
-	}
-
-	return results, nil
-}
-
-// GetBudgetHistory returns monthly budget breakdown for a year
-func GetBudgetHistory(year int) (types.BudgetHistoryResponse, error) {
-	pool, err := GetPool()
-	if err != nil {
-		return types.BudgetHistoryResponse{}, err
-	}
-
-	ctx := context.Background()
-	response := types.BudgetHistoryResponse{Year: year, Months: []types.BudgetHistoryMonth{}}
-
-	// Get all categories with their budgets
-	type categoryBudget struct {
-		CategoryId   int32
-		CategoryName string
-		Budget       float64
-	}
-	type categorySpend struct {
-		Spent float64
-		Lent  float64
-	}
-	var categories []categoryBudget
-
-	rows, err := pool.Query(ctx,
-		`SELECT c.id, c.name, COALESCE(b.amount, 0) as budget
-		 FROM categories c
-		 LEFT JOIN budgets b ON c.id = b.category_id
-		 ORDER BY c.name`,
-	)
-	if err != nil {
-		return types.BudgetHistoryResponse{}, fmt.Errorf("error querying categories: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var cb categoryBudget
-		if err := rows.Scan(&cb.CategoryId, &cb.CategoryName, &cb.Budget); err != nil {
-			return types.BudgetHistoryResponse{}, fmt.Errorf("error scanning category: %w", err)
-		}
-		categories = append(categories, cb)
-	}
-	rows.Close()
-
-	// For each month 1-12, get spending data
-	for month := 1; month <= 12; month++ {
-		monthData := types.BudgetHistoryMonth{
-			Month:      month,
-			Categories: []types.BudgetHistoryCategory{},
-		}
-
-		// Repayments are excluded: lent money is already left out of expenses, so counting it
-		// coming back as income would double count it.
-		err = pool.QueryRow(ctx,
-			`SELECT COALESCE(SUM(amount), 0) FROM incomes i
-			 WHERE EXTRACT(YEAR FROM i.created_at) = $1 AND EXTRACT(MONTH FROM i.created_at) = $2
-			   AND NOT EXISTS (SELECT 1 FROM debts d WHERE d.income_id = i.id)`,
-			year, month,
-		).Scan(&monthData.TotalIncome)
-		if err != nil {
-			return types.BudgetHistoryResponse{}, fmt.Errorf("error getting monthly income: %w", err)
-		}
-
-		// Spending counts only your share of each expense; uncategorized rows (NULL category)
-		// count toward the month total only.
-		spendingByCategory := make(map[int32]categorySpend)
-		expRows, err := pool.Query(ctx,
-			`WITH lent_by_expense AS (
-				SELECT expense_id, SUM(amount) AS lent
-				FROM debts
-				WHERE outbound AND expense_id IS NOT NULL
-				GROUP BY expense_id
-			 )
-			 SELECT e.category_id,
-				COALESCE(SUM(e.expense - COALESCE(l.lent, 0)), 0) AS spent,
-				COALESCE(SUM(COALESCE(l.lent, 0)), 0) AS lent
-			 FROM expenses e
-			 LEFT JOIN lent_by_expense l ON l.expense_id = e.id
-			 WHERE EXTRACT(YEAR FROM e.created_at) = $1
-			   AND EXTRACT(MONTH FROM e.created_at) = $2
-			 GROUP BY e.category_id`,
-			year, month,
-		)
-		if err != nil {
-			return types.BudgetHistoryResponse{}, fmt.Errorf("error getting spending by category: %w", err)
-		}
-
-		for expRows.Next() {
-			var catId *int32
-			var s categorySpend
-			if err := expRows.Scan(&catId, &s.Spent, &s.Lent); err != nil {
-				expRows.Close()
-				return types.BudgetHistoryResponse{}, fmt.Errorf("error scanning spending: %w", err)
-			}
-			monthData.TotalExpenses += s.Spent
-			monthData.TotalLent += s.Lent
-			if catId != nil {
-				spendingByCategory[*catId] = s
-			}
-		}
-		expRows.Close()
-		if err := expRows.Err(); err != nil {
-			return types.BudgetHistoryResponse{}, fmt.Errorf("error reading spending: %w", err)
-		}
-
-		// Build category breakdown
-		for _, cat := range categories {
-			spend := spendingByCategory[cat.CategoryId]
-			spent := spend.Spent
-
-			bhc := types.BudgetHistoryCategory{
-				CategoryId:   cat.CategoryId,
-				CategoryName: cat.CategoryName,
-				Budget:       cat.Budget,
-				Spent:        spent,
-				Lent:         spend.Lent,
-				Difference:   cat.Budget - spent, // positive = under budget
-			}
-
-			// Calculate percentages
-			if monthData.TotalExpenses > 0 {
-				bhc.PctOfExpenses = (spent / monthData.TotalExpenses) * 100
-			}
-			if monthData.TotalIncome > 0 {
-				bhc.PctOfIncome = (spent / monthData.TotalIncome) * 100
-			}
-
-			monthData.Categories = append(monthData.Categories, bhc)
-		}
-
-		response.Months = append(response.Months, monthData)
-	}
-
-	// Calculate yearly totals
-	yearlyTotals := types.BudgetHistoryYearlyTotals{
-		Categories: []types.BudgetHistoryYearlyCategory{},
-	}
-
-	// Aggregate from monthly data
-	yearlySpendingByCategory := make(map[int32]categorySpend)
-	for _, month := range response.Months {
-		yearlyTotals.TotalExpenses += month.TotalExpenses
-		yearlyTotals.TotalIncome += month.TotalIncome
-		for _, cat := range month.Categories {
-			s := yearlySpendingByCategory[cat.CategoryId]
-			s.Spent += cat.Spent
-			s.Lent += cat.Lent
-			yearlySpendingByCategory[cat.CategoryId] = s
-		}
-	}
-
-	// Calculate yearly budget (monthly budget * 12)
-	for _, cat := range categories {
-		yearlyTotals.TotalBudget += cat.Budget * 12
-	}
-	yearlyTotals.Difference = yearlyTotals.TotalBudget - yearlyTotals.TotalExpenses
-
-	// Calculate savings rate
-	if yearlyTotals.TotalIncome > 0 {
-		yearlyTotals.SavingsRate = ((yearlyTotals.TotalIncome - yearlyTotals.TotalExpenses) / yearlyTotals.TotalIncome) * 100
-	}
-
-	// Build yearly category breakdown
-	for _, cat := range categories {
-		yearlySpend := yearlySpendingByCategory[cat.CategoryId]
-		totalSpent := yearlySpend.Spent
-		yearlyBudget := cat.Budget * 12
-
-		yhc := types.BudgetHistoryYearlyCategory{
-			CategoryId:   cat.CategoryId,
-			CategoryName: cat.CategoryName,
-			YearlyBudget: yearlyBudget,
-			TotalSpent:   totalSpent,
-			TotalLent:    yearlySpend.Lent,
-			Difference:   yearlyBudget - totalSpent,
-		}
-
-		// Calculate percentages
-		if yearlyTotals.TotalExpenses > 0 {
-			yhc.PctOfExpenses = (totalSpent / yearlyTotals.TotalExpenses) * 100
-		}
-		if yearlyTotals.TotalIncome > 0 {
-			yhc.PctOfIncome = (totalSpent / yearlyTotals.TotalIncome) * 100
-		}
-
-		yearlyTotals.Categories = append(yearlyTotals.Categories, yhc)
-	}
-
-	response.YearlyTotals = yearlyTotals
-
-	return response, nil
-}
-
 // ========== DEBTORS ==========
 
 // GetDebtors retrieves all debtors
@@ -1804,7 +1584,9 @@ func GetInvestmentAccountExpectedCapital() ([]types.InvestmentAccountExpectedCap
 
 // ========== INSERT FUNCTIONS (migrated from supabase) ==========
 
-// InsertBudgetsIntoDatabase upserts budget records
+// InsertBudgetsIntoDatabase records a new budget version per category, effective from the first of
+// the current month. YTD, rollup and notes carry over from the version in effect today; another
+// change in the same month updates that month's version.
 func InsertBudgetsIntoDatabase(budgets []types.Budget) ([]types.Budget, error) {
 	pool, err := GetPool()
 	if err != nil {
@@ -1817,15 +1599,18 @@ func InsertBudgetsIntoDatabase(budgets []types.Budget) ([]types.Budget, error) {
 	for _, b := range budgets {
 		var result types.Budget
 		err := pool.QueryRow(ctx,
-			`INSERT INTO budgets (category_id, amount)
-			 VALUES ($1, $2)
-			 ON CONFLICT (category_id) DO UPDATE SET amount = EXCLUDED.amount
+			`INSERT INTO budgets (category_id, amount, effective_from, evaluate_ytd, rollup_category_id, notes)
+			 SELECT $1::bigint, $2::double precision, date_trunc('month', current_date)::date,
+				COALESCE(cur.evaluate_ytd, false), cur.rollup_category_id, cur.notes
+			 FROM (SELECT 1) AS one
+			 LEFT JOIN budgets_current cur ON cur.category_id = $1::bigint
+			 ON CONFLICT (category_id, effective_from) DO UPDATE SET amount = EXCLUDED.amount
 			 RETURNING id, category_id, amount`,
 			b.CategoryId, b.Amount,
 		).Scan(&result.Id, &result.CategoryId, &result.Amount)
 
 		if err != nil {
-			return nil, fmt.Errorf("error upserting budget: %w", err)
+			return nil, fmt.Errorf("error inserting budget version: %w", err)
 		}
 		results = append(results, result)
 	}
