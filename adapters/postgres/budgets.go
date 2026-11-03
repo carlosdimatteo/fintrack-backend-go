@@ -150,8 +150,8 @@ func loadBudgetYear(year int) (budgetYear, error) {
 
 // evaluateBudgetYear computes budget vs actual for every category in every month. A category's
 // actual includes the spend of categories rolled into it that month; rolled-up categories, loans
-// and categories without a budget aren't evaluated. evaluate_ytd categories are judged on
-// January-to-month totals instead of the single month.
+// and categories without a budget aren't evaluated. Status is always the month's; year-to-date
+// figures are returned alongside for views that ask for them.
 func evaluateBudgetYear(d budgetYear) [12][]types.BudgetHistoryCategory {
 	names := make(map[int32]string, len(d.categories))
 	for _, c := range d.categories {
@@ -196,15 +196,11 @@ func evaluateBudgetYear(d budgetYear) [12][]types.BudgetHistoryCategory {
 				e.RollupCategoryName = names[*v.RollupCategoryId]
 			}
 
-			budget, spent := v.Amount, actual
-			if v.EvaluateYTD {
-				budget, spent = e.YTDBudget, e.YTDActual
-			}
-			e.Difference = budget - spent
+			e.Difference = v.Amount - actual
 			if !hasBudget || v.RollupCategoryId != nil || c.Id == prestamosCategoryId {
 				e.Status = budgetNeutral
 			} else {
-				e.Status = budgetStatus(spent, budget)
+				e.Status = budgetStatus(actual, v.Amount)
 			}
 			out[m] = append(out[m], e)
 		}

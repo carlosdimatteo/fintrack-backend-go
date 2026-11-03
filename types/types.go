@@ -304,7 +304,7 @@ type BudgetHistoryCategory struct {
 	Budget        float64 `json:"budget"`
 	Spent         float64 `json:"spent"` // your share: expense minus what was lent from it
 	Lent          float64 `json:"lent"`
-	Difference    float64 `json:"difference"`      // budget - actual on the evaluated basis (YTD when evaluate_ytd)
+	Difference    float64 `json:"difference"`      // budget - actual for the month
 	PctOfExpenses float64 `json:"pct_of_expenses"` // spent / total_expenses * 100
 	PctOfIncome   float64 `json:"pct_of_income"`   // spent / total_income * 100
 	BudgetEvaluation

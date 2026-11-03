@@ -67,9 +67,9 @@ func TestEvaluateBudgetYear(t *testing.T) {
 	if r := get(0, bienestar); r.ytdBudget != 100 || r.ytdActual != 250 || r.status != "over" {
 		t.Errorf("Bienestar in Jan: ytd %.2f/%.2f status %s, want 250/100 over", r.ytdActual, r.ytdBudget, r.status)
 	}
-	// August alone is over (300 > 200), but year to date it isn't: 550 of 6*100 + 2*200 = 1000
-	if r := get(7, bienestar); r.ytdBudget != 1000 || r.ytdActual != 550 || r.fullYear != 1800 || r.status != "ok" {
-		t.Errorf("Bienestar in Aug: ytd %.2f/%.2f full year %.2f status %s, want 550/1000 1800 ok",
+	// Status is the month's (300 > 200), even though year to date it's under: 550 of 6*100 + 2*200
+	if r := get(7, bienestar); r.ytdBudget != 1000 || r.ytdActual != 550 || r.fullYear != 1800 || r.status != "over" {
+		t.Errorf("Bienestar in Aug: ytd %.2f/%.2f full year %.2f status %s, want 550/1000 1800 over",
 			r.ytdActual, r.ytdBudget, r.fullYear, r.status)
 	}
 }
