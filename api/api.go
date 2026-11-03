@@ -893,6 +893,18 @@ func createDebtor(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+// accountingCloseWindowDays: accounting done this early in a month closes the previous month.
+const accountingCloseWindowDays = 10
+
+// snapshotPeriod returns the year/month a snapshot taken at t belongs to.
+func snapshotPeriod(t time.Time) (int, int) {
+	if t.Day() <= accountingCloseWindowDays {
+		lastDayOfPrevMonth := t.AddDate(0, 0, -t.Day())
+		return lastDayOfPrevMonth.Year(), int(lastDayOfPrevMonth.Month())
+	}
+	return t.Year(), int(t.Month())
+}
+
 func setAccountingForCurrentMonth(w http.ResponseWriter, r *http.Request) {
 	// get account array for accounts and for investment_accounts , then do update for each on balance
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -960,8 +972,8 @@ func setAccountingForCurrentMonth(w http.ResponseWriter, r *http.Request) {
 
 	// Create net worth snapshot after updating balances
 	go func() {
-		now := time.Now()
-		snapshot, err := postgres.CalculateNetWorthSnapshot(now.Year(), int(now.Month()))
+		year, month := snapshotPeriod(time.Now())
+		snapshot, err := postgres.CalculateNetWorthSnapshot(year, month)
 		if err != nil {
 			log.Printf("Error calculating net worth snapshot: %v", err)
 			return
@@ -973,7 +985,7 @@ func setAccountingForCurrentMonth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("Created net worth snapshot for %d/%d: Real $%.2f, Expected $%.2f, Discrepancy $%.2f", now.Month(), now.Year(), snapshot.TotalRealNetWorth, snapshot.ExpectedNetWorth, snapshot.TotalDiscrepancy)
+		log.Printf("Created net worth snapshot for %d/%d: Real $%.2f, Expected $%.2f, Discrepancy $%.2f", month, year, snapshot.TotalRealNetWorth, snapshot.ExpectedNetWorth, snapshot.TotalDiscrepancy)
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1126,11 +1138,11 @@ type DashboardResponse struct {
 		InvestmentDeposits float64 `json:"investment_deposits"`
 		Savings            float64 `json:"savings"`
 	} `json:"ytd"`
-	Goals                     types.YearlyGoals                `json:"goals"`
-	NetWorth                  types.NetWorthSnapshot           `json:"net_worth"`
-	Investments               []types.InvestmentAccountSummary `json:"investments"`
-	SavingsProgress           types.SavingsProgress            `json:"savings_progress"`
-	ExpensesSinceLastSnapshot float64                          `json:"expenses_since_last_snapshot"`
+	Goals               types.YearlyGoals                `json:"goals"`
+	NetWorth            types.NetWorthSnapshot           `json:"net_worth"`
+	Investments         []types.InvestmentAccountSummary `json:"investments"`
+	SavingsProgress     types.SavingsProgress            `json:"savings_progress"`
+	SinceLastAccounting *types.FlowsSince                `json:"since_last_accounting,omitempty"`
 }
 
 func getDashboard(w http.ResponseWriter, r *http.Request) {
@@ -1194,15 +1206,36 @@ func getDashboard(w http.ResponseWriter, r *http.Request) {
 	goals, _ := postgres.GetYearlyGoals(year)
 	dashboard.Goals = goals
 
-	// Get net worth snapshot for the specified month
-	// For historical months, use stored snapshot; for current month, calculate live
 	currentYear := time.Now().Year()
 	currentMonth := int(time.Now().Month())
 
+	// Real balances only change at accounting, so "now" is the latest accounting snapshot (every
+	// value as of the same moment) plus what has been logged since. A live calculation would mix
+	// stale balances with live capital and expected balances.
+	var latest types.NetWorthSnapshot
+	hasLatest := false
+	if year == currentYear {
+		latest, hasLatest, _ = postgres.GetLatestNetWorthSnapshot()
+	}
+
 	if year == currentYear && month == currentMonth {
-		// Current month - calculate live
-		snapshot, _ := postgres.CalculateNetWorthSnapshot(year, month)
-		dashboard.NetWorth = snapshot
+		if hasLatest {
+			dashboard.NetWorth = latest
+			since, sinceErr := postgres.GetFiatFlowsSince(latest.Date)
+			expectedNow, expectedErr := postgres.GetExpectedFiatBalance()
+			if sinceErr == nil && expectedErr == nil {
+				dashboard.SinceLastAccounting = &since
+				// Recompute expected as of the accounting itself: entries dated before it but logged
+				// later (backfills) belong to it, entries dated after it are "since".
+				nw := &dashboard.NetWorth
+				nw.ExpectedFiatBalance = expectedNow - since.Net
+				nw.ExpectedNetWorth = nw.ExpectedFiatBalance + nw.TotalInvestmentBalance
+				nw.FiatDiscrepancy = nw.TotalFiatBalance - nw.ExpectedFiatBalance
+				nw.TotalDiscrepancy = nw.TotalRealNetWorth - nw.ExpectedNetWorth
+			}
+		} else {
+			dashboard.NetWorth, _ = postgres.CalculateNetWorthSnapshot(year, month)
+		}
 	} else {
 		// Historical - try to get stored snapshot
 		storedSnapshot, found, err := postgres.GetNetWorthSnapshot(year, month)
@@ -1218,23 +1251,15 @@ func getDashboard(w http.ResponseWriter, r *http.Request) {
 	investments, _ := postgres.GetInvestmentAccountSummary()
 	dashboard.Investments = investments
 
-	// Expenses logged after the most recent snapshot — used by the dashboard
-	// to recognize that a non-zero discrepancy is just unreconciled spending.
-	// Only meaningful for the current calendar month.
-	if year == currentYear && month == currentMonth && !dashboard.NetWorth.CreatedAt.IsZero() {
-		expensesSince, err := postgres.GetExpenseSumSince(dashboard.NetWorth.CreatedAt)
-		if err == nil {
-			dashboard.ExpensesSinceLastSnapshot = expensesSince
-		}
-	}
-
-	// Calculate savings progress
-	// For current year: use live calculated net worth
-	// For past years: use December snapshot of that year (end of year state)
+	// Savings progress: current year from the latest accounting snapshot, past years from their
+	// December snapshot (year-end state)
 	var progressNetWorth types.NetWorthSnapshot
 	if year == currentYear {
-		// Current year - calculate live
-		progressNetWorth, _ = postgres.CalculateNetWorthSnapshot(year, int(time.Now().Month()))
+		if hasLatest {
+			progressNetWorth = latest
+		} else {
+			progressNetWorth, _ = postgres.CalculateNetWorthSnapshot(year, currentMonth)
+		}
 	} else {
 		// Historical year - use December snapshot (year-end state)
 		storedSnapshot, found, err := postgres.GetNetWorthSnapshot(year, 12)

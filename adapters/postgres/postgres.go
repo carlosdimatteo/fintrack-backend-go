@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"sync"
 	"time"
@@ -577,75 +578,51 @@ func UpsertNetWorthSnapshot(snapshot types.NetWorthSnapshot) (types.NetWorthSnap
 	return result, nil
 }
 
-// GetNetWorthHistory retrieves all snapshots ordered by date
-// GetNetWorthSnapshot retrieves a specific stored snapshot by year/month.
-// If no snapshot exists for the requested month, falls back to a snapshot
-// created in the first 5 days of the following month — accounts for the
-// workflow where end-of-month accounting is filed in early next month.
-func GetNetWorthSnapshot(year int, month int) (types.NetWorthSnapshot, bool, error) {
+const snapshotColumns = `id, created_at, date, year, month, total_fiat_balance,
+	crypto_balance, crypto_capital, broker_balance, broker_capital,
+	total_investment_balance, total_investment_capital,
+	total_real_net_worth, total_pnl,
+	COALESCE(expected_fiat_balance, 0), COALESCE(expected_net_worth, 0),
+	COALESCE(fiat_discrepancy, 0), COALESCE(total_discrepancy, 0),
+	fiat_percent, crypto_percent, broker_percent`
+
+func scanSnapshot(row pgx.Row) (types.NetWorthSnapshot, error) {
+	var s types.NetWorthSnapshot
+	err := row.Scan(&s.Id, &s.CreatedAt, &s.Date, &s.Year, &s.Month,
+		&s.TotalFiatBalance, &s.CryptoBalance, &s.CryptoCapital,
+		&s.BrokerBalance, &s.BrokerCapital, &s.TotalInvestmentBalance,
+		&s.TotalInvestmentCapital, &s.TotalRealNetWorth, &s.TotalPnL,
+		&s.ExpectedFiatBalance, &s.ExpectedNetWorth, &s.FiatDiscrepancy, &s.TotalDiscrepancy,
+		&s.FiatPercent, &s.CryptoPercent, &s.BrokerPercent)
+	return s, err
+}
+
+func querySnapshot(query string, args ...any) (types.NetWorthSnapshot, bool, error) {
 	pool, err := GetPool()
 	if err != nil {
 		return types.NetWorthSnapshot{}, false, err
 	}
-
-	const snapshotCols = `id, created_at, date, year, month, total_fiat_balance,
-		crypto_balance, crypto_capital, broker_balance, broker_capital,
-		total_investment_balance, total_investment_capital,
-		total_real_net_worth, total_pnl,
-		COALESCE(expected_fiat_balance, 0), COALESCE(expected_net_worth, 0),
-		COALESCE(fiat_discrepancy, 0), COALESCE(total_discrepancy, 0),
-		fiat_percent, crypto_percent, broker_percent`
-
-	scan := func(row pgx.Row, s *types.NetWorthSnapshot) error {
-		return row.Scan(&s.Id, &s.CreatedAt, &s.Date, &s.Year, &s.Month,
-			&s.TotalFiatBalance, &s.CryptoBalance, &s.CryptoCapital,
-			&s.BrokerBalance, &s.BrokerCapital, &s.TotalInvestmentBalance,
-			&s.TotalInvestmentCapital, &s.TotalRealNetWorth, &s.TotalPnL,
-			&s.ExpectedFiatBalance, &s.ExpectedNetWorth, &s.FiatDiscrepancy, &s.TotalDiscrepancy,
-			&s.FiatPercent, &s.CryptoPercent, &s.BrokerPercent)
+	s, err := scanSnapshot(pool.QueryRow(context.Background(), query, args...))
+	if err == pgx.ErrNoRows {
+		return types.NetWorthSnapshot{}, false, nil
 	}
-
-	ctx := context.Background()
-	var s types.NetWorthSnapshot
-	err = scan(pool.QueryRow(ctx,
-		`SELECT `+snapshotCols+` FROM net_worth_snapshots WHERE year = $1 AND month = $2`,
-		year, month,
-	), &s)
-
-	if err == nil {
-		return s, true, nil
-	}
-	if err != pgx.ErrNoRows {
+	if err != nil {
 		return types.NetWorthSnapshot{}, false, fmt.Errorf("error querying snapshot: %w", err)
 	}
-
-	// Fallback: look for an early-next-month snapshot (end-of-month accounting
-	// filed in the first 5 days of the following month).
-	nextYear, nextMonth := year, month+1
-	if nextMonth > 12 {
-		nextMonth = 1
-		nextYear++
-	}
-
-	err = scan(pool.QueryRow(ctx,
-		`SELECT `+snapshotCols+` FROM net_worth_snapshots
-		 WHERE year = $1 AND month = $2 AND EXTRACT(DAY FROM created_at) <= 5`,
-		nextYear, nextMonth,
-	), &s)
-
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return types.NetWorthSnapshot{}, false, nil
-		}
-		return types.NetWorthSnapshot{}, false, fmt.Errorf("error querying fallback snapshot: %w", err)
-	}
-
-	// Re-attribute to the requested period so the dashboard UI stays consistent.
-	s.Year = year
-	s.Month = month
 	return s, true, nil
 }
 
+// GetNetWorthSnapshot retrieves the stored snapshot for a year/month.
+func GetNetWorthSnapshot(year int, month int) (types.NetWorthSnapshot, bool, error) {
+	return querySnapshot(`SELECT `+snapshotColumns+` FROM net_worth_snapshots WHERE year = $1 AND month = $2`, year, month)
+}
+
+// GetLatestNetWorthSnapshot returns the snapshot from the most recent accounting.
+func GetLatestNetWorthSnapshot() (types.NetWorthSnapshot, bool, error) {
+	return querySnapshot(`SELECT ` + snapshotColumns + ` FROM net_worth_snapshots ORDER BY date DESC LIMIT 1`)
+}
+
+// GetNetWorthHistory retrieves all snapshots ordered by period
 func GetNetWorthHistory() ([]types.NetWorthSnapshot, error) {
 	pool, err := GetPool()
 	if err != nil {
@@ -653,14 +630,7 @@ func GetNetWorthHistory() ([]types.NetWorthSnapshot, error) {
 	}
 
 	rows, err := pool.Query(context.Background(),
-		`SELECT id, created_at, date, year, month, total_fiat_balance,
-			crypto_balance, crypto_capital, broker_balance, broker_capital,
-			total_investment_balance, total_investment_capital,
-			total_real_net_worth, total_pnl,
-			COALESCE(expected_fiat_balance, 0), COALESCE(expected_net_worth, 0),
-			COALESCE(fiat_discrepancy, 0), COALESCE(total_discrepancy, 0),
-			fiat_percent, crypto_percent, broker_percent
-		 FROM net_worth_snapshots ORDER BY year, month`,
+		`SELECT `+snapshotColumns+` FROM net_worth_snapshots ORDER BY year, month`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error querying snapshots: %w", err)
@@ -669,13 +639,8 @@ func GetNetWorthHistory() ([]types.NetWorthSnapshot, error) {
 
 	var results []types.NetWorthSnapshot
 	for rows.Next() {
-		var s types.NetWorthSnapshot
-		if err := rows.Scan(&s.Id, &s.CreatedAt, &s.Date, &s.Year, &s.Month,
-			&s.TotalFiatBalance, &s.CryptoBalance, &s.CryptoCapital,
-			&s.BrokerBalance, &s.BrokerCapital, &s.TotalInvestmentBalance,
-			&s.TotalInvestmentCapital, &s.TotalRealNetWorth, &s.TotalPnL,
-			&s.ExpectedFiatBalance, &s.ExpectedNetWorth, &s.FiatDiscrepancy, &s.TotalDiscrepancy,
-			&s.FiatPercent, &s.CryptoPercent, &s.BrokerPercent); err != nil {
+		s, err := scanSnapshot(rows)
+		if err != nil {
 			return nil, fmt.Errorf("error scanning row: %w", err)
 		}
 		results = append(results, s)
@@ -684,45 +649,25 @@ func GetNetWorthHistory() ([]types.NetWorthSnapshot, error) {
 	return results, nil
 }
 
-// CalculateSavingsProgress calculates progress toward savings goal using baseline values
+// CalculateSavingsProgress calculates progress toward the savings goal since the year's baseline.
+// The "without gains" variants drop this year's PnL gains but keep losses, so they can never
+// exceed the real figure, and dropping both gains is never above dropping broker gains alone.
 func CalculateSavingsProgress(goals types.YearlyGoals, netWorth types.NetWorthSnapshot) types.SavingsProgress {
 	progress := types.SavingsProgress{
 		Goal: goals.SavingsGoal,
 	}
 
-	// Calculate baseline net worth values
 	progress.BaselineNetWorth = goals.BaselineFiatBalance + goals.BaselineCryptoBalance + goals.BaselineBrokerBalance
-
-	// Baseline without broker winnings = fiat + crypto real + broker capital
-	progress.BaselineWithoutBrokerWinnings = goals.BaselineFiatBalance + goals.BaselineCryptoBalance + goals.BaselineBrokerCapital
-
-	// Baseline without any winnings = fiat + min(crypto) + min(broker)
-	baselineCryptoMin := goals.BaselineCryptoBalance
-	if goals.BaselineCryptoCapital < baselineCryptoMin {
-		baselineCryptoMin = goals.BaselineCryptoCapital
-	}
-	baselineBrokerMin := goals.BaselineBrokerBalance
-	if goals.BaselineBrokerCapital < baselineBrokerMin {
-		baselineBrokerMin = goals.BaselineBrokerCapital
-	}
-	progress.BaselineWithoutWinnings = goals.BaselineFiatBalance + baselineCryptoMin + baselineBrokerMin
-
-	// Calculate current net worth values
 	progress.CurrentNetWorth = netWorth.TotalRealNetWorth
 
-	// Current without broker winnings = fiat + crypto real + broker capital
-	progress.CurrentWithoutBrokerWinnings = netWorth.TotalFiatBalance + netWorth.CryptoBalance + netWorth.BrokerCapital
+	// PnL earned during the year = PnL now minus PnL at the baseline
+	brokerGain := math.Max(0, (netWorth.BrokerBalance-netWorth.BrokerCapital)-(goals.BaselineBrokerBalance-goals.BaselineBrokerCapital))
+	cryptoGain := math.Max(0, (netWorth.CryptoBalance-netWorth.CryptoCapital)-(goals.BaselineCryptoBalance-goals.BaselineCryptoCapital))
 
-	// Current without any winnings = fiat + min(crypto) + min(broker)
-	currentCryptoMin := netWorth.CryptoBalance
-	if netWorth.CryptoCapital < currentCryptoMin {
-		currentCryptoMin = netWorth.CryptoCapital
-	}
-	currentBrokerMin := netWorth.BrokerBalance
-	if netWorth.BrokerCapital < currentBrokerMin {
-		currentBrokerMin = netWorth.BrokerCapital
-	}
-	progress.CurrentWithoutWinnings = netWorth.TotalFiatBalance + currentCryptoMin + currentBrokerMin
+	progress.BaselineWithoutBrokerWinnings = progress.BaselineNetWorth
+	progress.CurrentWithoutBrokerWinnings = progress.CurrentNetWorth - brokerGain
+	progress.BaselineWithoutWinnings = progress.BaselineNetWorth
+	progress.CurrentWithoutWinnings = progress.CurrentNetWorth - brokerGain - cryptoGain
 
 	// Calculate savings (current - baseline)
 	progress.SavedThisYear = progress.CurrentNetWorth - progress.BaselineNetWorth
@@ -742,6 +687,22 @@ func CalculateSavingsProgress(goals types.YearlyGoals, netWorth types.NetWorthSn
 	}
 
 	return progress
+}
+
+// GetExpectedFiatBalance sums every fiat account's expected balance (from logged transactions).
+func GetExpectedFiatBalance() (float64, error) {
+	pool, err := GetPool()
+	if err != nil {
+		return 0, err
+	}
+	var expected float64
+	err = pool.QueryRow(context.Background(),
+		`SELECT COALESCE(SUM(expected_balance), 0) FROM account_expected_balance`,
+	).Scan(&expected)
+	if err != nil {
+		return 0, fmt.Errorf("error querying expected balance: %w", err)
+	}
+	return expected, nil
 }
 
 // CalculateNetWorthSnapshot calculates current net worth from accounts
@@ -767,10 +728,7 @@ func CalculateNetWorthSnapshot(year int, month int) (types.NetWorthSnapshot, err
 		return types.NetWorthSnapshot{}, fmt.Errorf("error getting fiat balance: %w", err)
 	}
 
-	// Get expected fiat balance (from transactions via account_expected_balance view)
-	err = pool.QueryRow(ctx,
-		`SELECT COALESCE(SUM(expected_balance), 0) FROM account_expected_balance`,
-	).Scan(&snapshot.ExpectedFiatBalance)
+	snapshot.ExpectedFiatBalance, err = GetExpectedFiatBalance()
 	if err != nil {
 		// View might not exist yet, default to 0
 		snapshot.ExpectedFiatBalance = 0
@@ -1605,28 +1563,41 @@ func GetMonthlyExpenseSum(year int, month int) (float64, error) {
 	return total, nil
 }
 
-// GetExpenseSumSince returns the total of expenses logged after a given timestamp.
-// Used to detect when a non-zero discrepancy is just the result of un-reconciled
-// expenses (accounting is behind, not actually wrong).
-func GetExpenseSumSince(since time.Time) (float64, error) {
+// GetFiatFlowsSince sums what was logged against fiat accounts after `since`, using the same
+// components as the account_expected_balance view.
+func GetFiatFlowsSince(since time.Time) (types.FlowsSince, error) {
 	pool, err := GetPool()
 	if err != nil {
-		return 0, err
+		return types.FlowsSince{}, err
 	}
 
-	var total float64
+	flows := types.FlowsSince{Since: since}
 	err = pool.QueryRow(context.Background(),
-		`SELECT COALESCE(SUM(expense), 0) FROM expenses WHERE created_at > $1`,
+		`WITH fa AS (SELECT id FROM accounts)
+		 SELECT
+			COALESCE((SELECT SUM(amount) FROM incomes WHERE account_id IN (SELECT id FROM fa) AND created_at > $1), 0),
+			COALESCE((SELECT SUM(expense) FROM expenses WHERE account_id IN (SELECT id FROM fa) AND created_at > $1), 0),
+			COALESCE((SELECT SUM(CASE WHEN type = 'deposit' THEN amount ELSE -amount END) FROM investments
+				WHERE source_account_id IN (SELECT id FROM fa) AND created_at > $1), 0),
+			COALESCE((SELECT SUM(dest_amount) FROM transfers WHERE dest_account_id IN (SELECT id FROM fa) AND created_at > $1), 0)
+			- COALESCE((SELECT SUM(source_amount) FROM transfers WHERE source_account_id IN (SELECT id FROM fa) AND created_at > $1), 0)`,
 		since,
-	).Scan(&total)
-
+	).Scan(&flows.Income, &flows.Expenses, &flows.Invested, &flows.Transfers)
 	if err != nil {
-		return 0, fmt.Errorf("error querying expenses since: %w", err)
+		return types.FlowsSince{}, fmt.Errorf("error querying flows since: %w", err)
 	}
-	return total, nil
+
+	flows.Net = flows.Income - flows.Expenses - flows.Invested + flows.Transfers
+	return flows, nil
 }
 
-// GetMonthlyInvestmentSum returns total investment deposits for a given year and month
+// netBrokerInvestedSQL sums deposits minus withdrawals into broker accounts. Crypto accounts
+// (Binance) are used for day-to-day money movement, so they don't count as investing.
+const netBrokerInvestedSQL = `SELECT COALESCE(SUM(CASE WHEN i.type = 'deposit' THEN i.amount ELSE -i.amount END), 0)
+	FROM investments i JOIN investment_accounts a ON a.id = i.account_id
+	WHERE a.type = 'Broker'`
+
+// GetMonthlyInvestmentSum returns net broker investment for a given year and month
 func GetMonthlyInvestmentSum(year int, month int) (float64, error) {
 	pool, err := GetPool()
 	if err != nil {
@@ -1635,8 +1606,7 @@ func GetMonthlyInvestmentSum(year int, month int) (float64, error) {
 
 	var total float64
 	err = pool.QueryRow(context.Background(),
-		`SELECT COALESCE(SUM(CASE WHEN type = 'deposit' THEN amount ELSE 0 END), 0) FROM investments 
-		 WHERE EXTRACT(YEAR FROM created_at) = $1 AND EXTRACT(MONTH FROM created_at) = $2`,
+		netBrokerInvestedSQL+` AND EXTRACT(YEAR FROM i.created_at) = $1 AND EXTRACT(MONTH FROM i.created_at) = $2`,
 		year, month,
 	).Scan(&total)
 
@@ -1668,9 +1638,9 @@ func GetYTDTotals(year int) (income float64, expenses float64, investments float
 		year,
 	).Scan(&expenses)
 
-	// Investments YTD (deposits only)
+	// Investments YTD (net broker deposits)
 	pool.QueryRow(ctx,
-		`SELECT COALESCE(SUM(amount), 0) FROM investments WHERE type = 'deposit' AND EXTRACT(YEAR FROM created_at) = $1`,
+		netBrokerInvestedSQL+` AND EXTRACT(YEAR FROM i.created_at) = $1`,
 		year,
 	).Scan(&investments)
 

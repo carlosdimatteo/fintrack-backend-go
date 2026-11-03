@@ -271,6 +271,17 @@ type NetWorthSnapshot struct {
 	BrokerPercent float64 `json:"broker_percent"`
 }
 
+// FlowsSince is what was logged against fiat accounts after a point in time (the last
+// accounting): already in the expected balance, not yet in the real one.
+type FlowsSince struct {
+	Since     time.Time `json:"since"`
+	Income    float64   `json:"income"`
+	Expenses  float64   `json:"expenses"`
+	Invested  float64   `json:"invested"`  // investment deposits minus withdrawals
+	Transfers float64   `json:"transfers"` // in minus out; non-zero only from FX differences
+	Net       float64   `json:"net"`
+}
+
 // BudgetHistoryCategory represents spending for a single category in a month
 type BudgetHistoryCategory struct {
 	CategoryId    int32   `json:"category_id"`
